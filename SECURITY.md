@@ -2,7 +2,6 @@
 
 ## Reporting a Vulnerability
 
-To report a security vulnerability, please open a
-[GitHub Security Advisory](../../security/advisories/new) rather than a public issue.
-
-We will respond within 5 business days and work with you on a coordinated disclosure timeline.
+Report security vulnerabilities through the
+[NVIDIA Product Security vulnerability reporting process](https://www.nvidia.com/en-us/security/).
+Do not open a public issue.
