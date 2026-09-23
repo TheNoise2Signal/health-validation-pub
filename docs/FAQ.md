@@ -8,7 +8,7 @@ The exit code is a coarse health signal:
 |---|---|
 | `0` | Verdict is PASS, INFO, or WARNING — the node may remain in service. (WARNING maps to 0 today; this may become configurable.) |
 | `1` | Verdict is CRITICAL or UNKNOWN — the node should be removed from service, or its health could not be assessed. |
-| `2` | The tool could not run to a verdict at all — a config error, backend/sensor initialization failure, collection failure, or output write error. No verdict was produced. |
+| `2` | The tool could not run to a verdict at all — a config error, backend/sensor initialization failure, collection failure, threshold-override audit failure (journald socket unavailable or a write failed), or output write error. No verdict was produced. |
 
 The exit code does not distinguish CRITICAL from UNKNOWN or INFO from WARNING. For the precise level, read `overall_severity` from the JSON — Slurm prolog scripts that need more than the coarse signal should do so.
 
