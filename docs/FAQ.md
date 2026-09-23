@@ -69,7 +69,7 @@ It depends on the `ThresholdCategory`:
 - **ADJUSTABLE**: Operator can override within documented bounds.
 - **FIXED**: Non-overridable. Attempting to override returns an error before the check runs.
 
-All active overrides appear in `thresholds[name].overridden: true` in the output, alongside the original NVIDIA value in `thresholds[name].original_value`.
+Overrides on checks that ran appear in the output as `thresholds[name].overridden: true`, next to the catalog default in `thresholds[name].original_value`. Every override in the config, including ones on disabled or skipped checks, is also recorded in the host's systemd journal; see [Audit trail for overrides](INTEGRATION.md#audit-trail-for-overrides).
 
 ## What Go version is required?
 
