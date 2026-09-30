@@ -72,6 +72,16 @@ func (m ErroredMeasurement) Err() error { return m.err }
 // signals the failing call would have populated.
 func (m ErroredMeasurement) FailedSignals() []string { return m.failedSignals }
 
+// UnsupportedSignaler is an optional interface a measurement may implement
+// to name signals its source explicitly reported as unsupported.
+//
+// Evaluation ignores it: such a signal keeps whatever value the sensor
+// chose for it. It lets an export of the collected data tell "reported
+// false" apart from "the source cannot report this".
+type UnsupportedSignaler interface {
+	UnsupportedSignals() []string
+}
+
 // DerivedSignaler is an optional interface a measurement may implement
 // to expose signals it computes rather than stores.
 //

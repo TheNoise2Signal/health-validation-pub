@@ -394,6 +394,7 @@ func measureDeviceThrottle(dev gonvml.Device, m *gpu.GPUMeasurement) {
 		m.HWThermalSlowdown = mask&gonvml.ClocksThrottleReasonHwThermalSlowdown != 0
 		m.HWPowerBrakeSlowdown = mask&gonvml.ClocksThrottleReasonHwPowerBrakeSlowdown != 0
 	case gonvml.ERROR_NOT_SUPPORTED:
+		m.MarkUnsupported(gpu.SignalHWSlowdown, gpu.SignalHWThermalSlowdown, gpu.SignalHWPowerBrakeSlowdown)
 	default:
 		m.AddError(&Error{Op: "DeviceGetCurrentClocksEventReasons", Return: ret},
 			gpu.SignalHWSlowdown,
@@ -615,6 +616,19 @@ func measureDeviceFabric(dev gonvml.Device, m *nvlink.NVLinkMeasurement) {
 			gonvml.GPU_FABRIC_HEALTH_MASK_SHIFT_ACCESS_TIMEOUT_RECOVERY,
 			gonvml.GPU_FABRIC_HEALTH_MASK_WIDTH_ACCESS_TIMEOUT_RECOVERY,
 		) == gonvml.GPU_FABRIC_HEALTH_MASK_ACCESS_TIMEOUT_RECOVERY_TRUE
+		for _, bit := range []struct {
+			signal                     string
+			shift, width, notSupported uint32
+		}{
+			{nvlink.SignalFabricBandwidthDegraded, gonvml.GPU_FABRIC_HEALTH_MASK_SHIFT_DEGRADED_BW, gonvml.GPU_FABRIC_HEALTH_MASK_WIDTH_DEGRADED_BW, gonvml.GPU_FABRIC_HEALTH_MASK_DEGRADED_BW_NOT_SUPPORTED},
+			{nvlink.SignalFabricRouteRecoveryInProgress, gonvml.GPU_FABRIC_HEALTH_MASK_SHIFT_ROUTE_RECOVERY, gonvml.GPU_FABRIC_HEALTH_MASK_WIDTH_ROUTE_RECOVERY, gonvml.GPU_FABRIC_HEALTH_MASK_ROUTE_RECOVERY_NOT_SUPPORTED},
+			{nvlink.SignalFabricRouteUnhealthy, gonvml.GPU_FABRIC_HEALTH_MASK_SHIFT_ROUTE_UNHEALTHY, gonvml.GPU_FABRIC_HEALTH_MASK_WIDTH_ROUTE_UNHEALTHY, gonvml.GPU_FABRIC_HEALTH_MASK_ROUTE_UNHEALTHY_NOT_SUPPORTED},
+			{nvlink.SignalFabricAccessTimeoutRecovery, gonvml.GPU_FABRIC_HEALTH_MASK_SHIFT_ACCESS_TIMEOUT_RECOVERY, gonvml.GPU_FABRIC_HEALTH_MASK_WIDTH_ACCESS_TIMEOUT_RECOVERY, gonvml.GPU_FABRIC_HEALTH_MASK_ACCESS_TIMEOUT_RECOVERY_NOT_SUPPORTED},
+		} {
+			if field(bit.shift, bit.width) == bit.notSupported {
+				m.MarkUnsupported(bit.signal)
+			}
+		}
 		m.FabricRegistrationIncomplete = info.State != gonvml.GPU_FABRIC_STATE_COMPLETED
 		m.FabricRegistrationFailed = info.State == gonvml.GPU_FABRIC_STATE_COMPLETED &&
 			gonvml.Return(info.Status) != gonvml.SUCCESS
@@ -622,6 +636,12 @@ func measureDeviceFabric(dev gonvml.Device, m *nvlink.NVLinkMeasurement) {
 		// On GB200/GB300 fabric registration is mandatory, so a not-supported
 		// result is flagged as unregistered rather than skipped.
 		m.FabricRegistrationIncomplete = true
+		m.MarkUnsupported(
+			nvlink.SignalFabricBandwidthDegraded,
+			nvlink.SignalFabricRouteRecoveryInProgress,
+			nvlink.SignalFabricRouteUnhealthy,
+			nvlink.SignalFabricAccessTimeoutRecovery,
+		)
 		slog.Debug("nvml: fabric info not supported on this device", "gpu", m.GPUID)
 	default:
 		m.AddError(&Error{Op: "DeviceGetGpuFabricInfoV", Return: ret},

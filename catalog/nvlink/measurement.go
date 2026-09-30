@@ -61,6 +61,7 @@ var MeasurementSignals = []string{
 type NVLinkMeasurement struct {
 	GPUID                         string `json:"gpu_id"`
 	errors                        []health.ErroredMeasurement
+	unsupported                   []string
 	LinkCount                     int64 `json:"link_count"`
 	SpeedMBytesPerSec             int64 `json:"speed_mbytes_per_sec"`
 	InactiveCount                 int64 `json:"inactive_count"`
@@ -99,3 +100,12 @@ func (NVLinkMeasurement) Category() health.Category { return health.NVLink }
 
 // Errors implements [health.Measurement].
 func (m NVLinkMeasurement) Errors() []health.ErroredMeasurement { return m.errors }
+
+// MarkUnsupported records signals the source reported as unsupported.
+// Their fields keep the value the sensor set, so evaluation is unchanged.
+func (m *NVLinkMeasurement) MarkUnsupported(signals ...string) {
+	m.unsupported = append(m.unsupported, signals...)
+}
+
+// UnsupportedSignals implements [health.UnsupportedSignaler].
+func (m NVLinkMeasurement) UnsupportedSignals() []string { return m.unsupported }

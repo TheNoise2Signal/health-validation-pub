@@ -55,6 +55,7 @@ type GPUMeasurement struct {
 	// readable), one process per line.
 	ComputeProcessCmdlines string `json:"compute_process_cmdlines"`
 	errors                 []health.ErroredMeasurement
+	unsupported            []string
 	AveragePowerDrawW      float64 `json:"average_power_draw_w"`
 	PowerLimitW            float64 `json:"power_limit_w"`
 	EnforcedPowerLimitW    float64 `json:"enforced_power_limit_w"`
@@ -108,3 +109,12 @@ func (GPUMeasurement) Category() health.Category { return health.GPU }
 
 // Errors implements [health.Measurement].
 func (m GPUMeasurement) Errors() []health.ErroredMeasurement { return m.errors }
+
+// MarkUnsupported records signals the source reported as unsupported.
+// Their fields keep the value the sensor set, so evaluation is unchanged.
+func (m *GPUMeasurement) MarkUnsupported(signals ...string) {
+	m.unsupported = append(m.unsupported, signals...)
+}
+
+// UnsupportedSignals implements [health.UnsupportedSignaler].
+func (m GPUMeasurement) UnsupportedSignals() []string { return m.unsupported }
