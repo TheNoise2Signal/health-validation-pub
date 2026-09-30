@@ -9,9 +9,12 @@ replace github.com/dsx-ai-factory/health-validation/collect => ../collect
 
 replace github.com/dsx-ai-factory/health-validation/catalog => ../catalog
 
+replace github.com/dsx-ai-factory/health-validation/toolkit => ../toolkit
+
 require (
-	github.com/dsx-ai-factory/health-validation/catalog v0.0.0-00010101000000-000000000000
+	github.com/dsx-ai-factory/health-validation/catalog v0.3.0
 	github.com/dsx-ai-factory/health-validation/collect v0.0.0-00010101000000-000000000000
+	github.com/dsx-ai-factory/health-validation/toolkit v0.0.0-00010101000000-000000000000
 	github.com/google/uuid v1.6.0
 	github.com/soheilhy/cmux v0.1.5
 	github.com/stretchr/testify v1.12.1
@@ -36,7 +39,7 @@ require (
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
 	golang.org/x/tools v0.49.0 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20260526163538-3dc84a4a5aaa // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20260819154853-08b0e4226688 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260819154853-08b0e4226688 // indirect
 	honnef.co/go/tools v0.8.1 // indirect
 )

@@ -20,27 +20,9 @@ import (
 	"github.com/dsx-ai-factory/health-validation/collect"
 	"github.com/dsx-ai-factory/health-validation/collect/observation"
 	dcgmsensor "github.com/dsx-ai-factory/health-validation/collect/sensors/dcgm"
-	gpusignals "github.com/dsx-ai-factory/health-validation/collect/signals/gpu"
 	dcgmsource "github.com/dsx-ai-factory/health-validation/collect/source/dcgm"
+	"github.com/dsx-ai-factory/health-validation/toolkit/observations"
 )
-
-var requiredGPUSignals = []string{
-	gpusignals.PowerDraw.ID(),
-	gpusignals.PowerLimitRequested.ID(),
-	gpusignals.PowerLimitEnforced.ID(),
-	gpusignals.PerformanceState.ID(),
-	gpusignals.HardwareSlowdownActive.ID(),
-	gpusignals.HardwareThermalSlowdownActive.ID(),
-	gpusignals.HardwarePowerBrakeSlowdownActive.ID(),
-}
-
-var requiredNVLinkSignals = []string{
-	gpusignals.NVLinkFabricBandwidthDegraded.ID(),
-	gpusignals.NVLinkFabricRouteRecoveryActive.ID(),
-	gpusignals.NVLinkFabricRouteUnhealthy.ID(),
-	gpusignals.NVLinkFabricAccessTimeoutRecovery.ID(),
-	gpusignals.FabricManagerStatus.ID(),
-}
 
 type config struct {
 	architecture        string
@@ -94,8 +76,7 @@ func run(cfg config) error {
 
 	// Selecting only the signals required by the registered checks also fixes
 	// the DCGM field watch before its first lazy native read.
-	signalIDs := append(append([]string{}, requiredGPUSignals...), requiredNVLinkSignals...)
-	sensor, err := dcgmsensor.New(dcgmSource, signalIDs...)
+	sensor, err := dcgmsensor.New(dcgmSource, observations.CanonicalSignals()...)
 	if err != nil {
 		return fmt.Errorf("initialize DCGM sensor: %w", err)
 	}
@@ -111,7 +92,7 @@ func run(cfg config) error {
 		return fmt.Errorf("validate observation batch: %w", validationErr)
 	}
 
-	measurements := buildMeasurements(batch.GetObservations())
+	measurements := observations.ToMeasurements(batch.GetObservations())
 	validationCatalog, err := newValidationCatalog(cfg.architecture)
 	if err != nil {
 		return err

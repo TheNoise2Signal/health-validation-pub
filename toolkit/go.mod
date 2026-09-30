@@ -5,6 +5,7 @@ go 1.27.0
 require (
 	github.com/NVIDIA/go-nvml v0.13.4-0
 	github.com/dsx-ai-factory/health-validation/catalog v0.3.0
+	github.com/dsx-ai-factory/health-validation/collect v0.0.0-00010101000000-000000000000
 	go.opentelemetry.io/otel v1.46.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.46.0
 	go.opentelemetry.io/otel/metric v1.46.0
@@ -38,7 +39,7 @@ require (
 	golang.org/x/tools v0.49.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260819154853-08b0e4226688 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260819154853-08b0e4226688 // indirect
-	google.golang.org/grpc v1.83.1 // indirect
+	google.golang.org/grpc v1.83.2 // indirect
 	honnef.co/go/tools v0.8.1 // indirect
 )
 
@@ -50,3 +51,7 @@ require (
 // main module), so they resolve catalog from the require version above — keep
 // that version in lockstep with the catalog tag you intend to ship against.
 replace github.com/dsx-ai-factory/health-validation/catalog => ../catalog
+
+// collect is unpublished; the observation contract is resolved from the
+// local tree until collect is tagged.
+replace github.com/dsx-ai-factory/health-validation/collect => ../collect
