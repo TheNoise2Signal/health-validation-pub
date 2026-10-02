@@ -30,7 +30,6 @@ package app
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -41,10 +40,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+	"google.golang.org/protobuf/encoding/protojson"
+
 	"github.com/dsx-ai-factory/health-validation/catalog"
 	"github.com/dsx-ai-factory/health-validation/catalog/health"
+	"github.com/dsx-ai-factory/health-validation/collect/observation"
 	"github.com/dsx-ai-factory/health-validation/toolkit"
 	"github.com/dsx-ai-factory/health-validation/toolkit/internal/version"
+	"github.com/dsx-ai-factory/health-validation/toolkit/observations"
 	"github.com/dsx-ai-factory/health-validation/toolkit/otelmetrics"
 )
 
@@ -524,39 +528,29 @@ var categoryBySensor = map[string]health.Category{
 	"xid":           health.Xid,
 }
 
-type collectedBatch struct {
-	Sensors []collectedSensor `json:"sensors"`
-}
-
-type collectedSensor struct {
-	Sensor       string                 `json:"sensor"`
-	Measurements []collectedMeasurement `json:"measurements"`
-}
-
-type collectedMeasurement struct {
-	Measurement     health.Measurement `json:"measurement"`
-	SignalStatus    map[string]string  `json:"signal_status"`
-	MeasurementType string             `json:"measurement_type"`
-	Errors          []collectedError   `json:"errors,omitempty"`
-	Category        health.Category    `json:"category"`
-}
-
-type collectedError struct {
-	Message       string   `json:"message"`
-	FailedSignals []string `json:"failed_signals"`
-	Timeout       bool     `json:"timeout,omitempty"`
-}
-
 // collectCommand runs only the sensors selected by checks listed in config.
 func (a *App) collectCommand(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet(a.prog+" collect", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	configPath := fs.String("config", "", "path to a YAML config listing checks to collect")
+	nodeID := fs.String("node-id", a.nodeID,
+		"identifier of the node under test, the target of host-wide observations (overrides the configured default or system hostname)")
 	if err := fs.Parse(args); err != nil {
 		return exitError
 	}
 	if fs.NArg() != 0 {
 		fmt.Fprintf(stderr, "%s: unexpected argument %q\n", a.prog, fs.Arg(0))
+		return exitError
+	}
+	nodeIDSet := a.nodeIDSet
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "node-id" {
+			nodeIDSet = true
+		}
+	})
+	resolvedNodeID, err := a.resolveNodeID(*nodeID, nodeIDSet)
+	if err != nil {
+		fmt.Fprintf(stderr, "%s: %v\n", a.prog, err)
 		return exitError
 	}
 	cfg, err := loadOptionalConfig(strings.TrimSpace(*configPath))
@@ -580,15 +574,18 @@ func (a *App) collectCommand(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "%s: %v\n", a.prog, err)
 		return exitError
 	}
-	output, err := collectionOutput(toolkit.CollectMeasurementsWithTimeout(timeout, sensors...))
+	batch, err := collectionOutput(uuid.NewString(), resolvedNodeID, toolkit.CollectMeasurementsWithTimeout(timeout, sensors...))
 	if err != nil {
-		fmt.Fprintf(stderr, "%s: prepare collected measurements: %v\n", a.prog, err)
+		fmt.Fprintf(stderr, "%s: prepare observation batch: %v\n", a.prog, err)
 		return exitError
 	}
-	encoder := json.NewEncoder(stdout)
-	encoder.SetIndent("", "  ")
-	if encodeErr := encoder.Encode(output); encodeErr != nil {
-		fmt.Fprintf(stderr, "%s: write collected measurements: %v\n", a.prog, encodeErr)
+	encoded, err := protojson.MarshalOptions{Multiline: true, Indent: "  "}.Marshal(batch)
+	if err != nil {
+		fmt.Fprintf(stderr, "%s: encode observation batch: %v\n", a.prog, err)
+		return exitError
+	}
+	if _, err := fmt.Fprintln(stdout, string(encoded)); err != nil {
+		fmt.Fprintf(stderr, "%s: write observation batch: %v\n", a.prog, err)
 		return exitError
 	}
 	return exitOK
@@ -642,44 +639,19 @@ func collectionSensors(sensors []toolkit.Sensor, categories map[health.Category]
 	return selected, nil
 }
 
-func collectionOutput(groups []toolkit.SensorMeasurements) (collectedBatch, error) {
-	batch := collectedBatch{Sensors: make([]collectedSensor, 0, len(groups))}
+// collectionOutput builds the ObservationBatch the collect command emits,
+// attributing each sensor's observations to "toolkit.<sensor>". Host-wide
+// measurements target nodeID.
+func collectionOutput(collectionID, nodeID string, groups []toolkit.SensorMeasurements) (*observation.ObservationBatch, error) {
+	batch := &observation.ObservationBatch{CollectionId: collectionID}
 	for _, group := range groups {
-		output := collectedSensor{Sensor: group.Sensor, Measurements: make([]collectedMeasurement, 0, len(group.Measurements))}
-		for _, measurement := range group.Measurements {
-			encoded, err := json.Marshal(measurement)
-			if err != nil {
-				return collectedBatch{}, fmt.Errorf("marshal %s measurement: %w", group.Sensor, err)
-			}
-			var signals map[string]json.RawMessage
-			if err := json.Unmarshal(encoded, &signals); err != nil || signals == nil {
-				return collectedBatch{}, fmt.Errorf("%s measurement must encode as a JSON object", group.Sensor)
-			}
-			status := make(map[string]string, len(signals))
-			for signal := range signals {
-				status[signal] = "available"
-			}
-			current := collectedMeasurement{
-				Measurement:     measurement,
-				SignalStatus:    status,
-				MeasurementType: group.Sensor,
-				Category:        measurement.Category(),
-			}
-			for _, failure := range measurement.Errors() {
-				for _, signal := range failure.FailedSignals() {
-					current.SignalStatus[signal] = "unavailable"
-				}
-				current.Errors = append(current.Errors, collectedError{
-					Message:       failure.Err().Error(),
-					FailedSignals: failure.FailedSignals(),
-					Timeout:       errors.Is(failure.Err(), health.ErrCollectionTimeout),
-				})
-			}
-			output.Measurements = append(output.Measurements, current)
+		exported, err := observations.FromMeasurements(group.Sensor, nodeID, group.CollectedAt, group.Measurements...)
+		if err != nil {
+			return nil, fmt.Errorf("%s sensor: %w", group.Sensor, err)
 		}
-		batch.Sensors = append(batch.Sensors, output)
+		batch.Observations = append(batch.Observations, exported...)
 	}
-	return batch, nil
+	return batch, observation.ValidateBatch(batch)
 }
 
 // loadOptionalConfig loads the config at path, or returns the zero config when

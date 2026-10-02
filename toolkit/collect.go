@@ -72,6 +72,8 @@ func CollectWithOptions(cat *catalog.Catalog, opts CollectionOptions, sensors ..
 
 // SensorMeasurements identifies the sensor that produced a group of measurements.
 type SensorMeasurements struct {
+	// CollectedAt is when the sensor returned or was degraded.
+	CollectedAt  time.Time
 	Sensor       string
 	Measurements []health.Measurement
 }
@@ -93,6 +95,7 @@ func CollectMeasurementsWithTimeout(timeout time.Duration, sensors ...Sensor) []
 				"sensor", s.Name(), "resource", key)
 			group.Measurements = s.Errored(fmt.Errorf("%s sensor: shared backend resource timed out: %w",
 				s.Name(), health.ErrCollectionTimeout))
+			group.CollectedAt = time.Now()
 			groups = append(groups, group)
 			continue
 		}
@@ -113,6 +116,7 @@ func CollectMeasurementsWithTimeout(timeout time.Duration, sensors ...Sensor) []
 		default:
 			group.Measurements = r.measurements
 		}
+		group.CollectedAt = time.Now()
 		groups = append(groups, group)
 	}
 	return groups

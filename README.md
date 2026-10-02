@@ -275,10 +275,10 @@ Run with a config file (threshold overrides):
 Collect sensor measurements without evaluating checks:
 
 ```shell
-./health-validation collect > measurements.json
+./health-validation collect > observations.json
 ```
 
-For `collect`, an optional config's check IDs select the sensor domains to run. Without one, every built-in sensor domain runs. The output groups measurements by their producing sensor. Each measurement includes its producing sensor as `measurement_type`, an `available` or `unavailable` status for every signal, and any per-signal collection errors. Sensor failures remain structured data and do not change the successful exit code.
+For `collect`, an optional config's check IDs select the sensor domains to run. Without one, every built-in sensor domain runs. The output is one `ObservationBatch` (`collect/proto/health/v1/observation.proto`) in protojson form, with one observation per measurement field. Each signal ID is the domain plus the field name the checks read (e.g. `nvlink.inactive_count`); these are toolkit names, not canonical collect signal IDs. GPU measurements target the GPU and host-wide ones target the node (`--node-id`, defaulting to the hostname). Each observation carries a `value`, a `collectionError`, or a `noValue`; map and list fields are JSON-encoded strings. A signal the source reports as unsupported is a `noValue` with reason `NO_VALUE_REASON_NOT_SUPPORTED`, never a zero value. Sensor failures remain structured data and do not change the successful exit code.
 
 Slurm prolog integration:
 
