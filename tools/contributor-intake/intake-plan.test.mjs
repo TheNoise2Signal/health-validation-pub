@@ -335,6 +335,13 @@ test('malformed reviewed collection preserves unknown intake', () => {
   assert.ok(result.diagnostics.includes('reviewed_decisions_malformed'));
 });
 
+test('a sparse label array remains an invalid visible row without proposed writes', () => {
+  const result = first(input({ items: [item({ labels: Array(1) })] }));
+  assert.ok(result.input_error.includes('invalid_labels'));
+  assert.equal(result.alert_eligible, false);
+  assert.deepEqual(result.proposed_steps, []);
+});
+
 test('planner requires routing and emits only its trusted recipients and channel', () => {
   const data = input(); delete data.routing;
   assert.throws(() => planIntake(data), /routing/i);

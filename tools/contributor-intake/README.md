@@ -13,8 +13,9 @@ unverified. It includes draft PRs. The workflow is disabled by default.
 4. NVIDIA authors and GitHub Bot accounts receive no targeted notification.
    External and unverified authors get a `triage/alert-requested` marker followed
    by one Slack send attempt to the configured channel and recipients.
-5. The script checks Slack's actual success, channel and message timestamp. An
-   operator records the receipt privately and reconciles failures before retrying.
+5. The same process checks Slack's actual success, channel and message timestamp
+   without logging them. An operator captures the post's permalink from Slack in
+   the private receipt journal and reconciles failures before retrying.
 
 PR code, branches, titles, bodies and comments are never executed. Alert text
 contains the item number, lifecycle, affiliation category, validated author login
@@ -87,11 +88,13 @@ An authorized operator must complete these steps before enabling the workflow:
 4. Provision the reviewed registry secret above. An empty registry preserves
    visibility, but labels every human as unverified; review the existing authors
    before judging alert volume or classification accuracy.
-5. Set repository variables `HEALTH_VALIDATION_INTAKE_CHANNEL` to the intended
-   channel ID and `HEALTH_VALIDATION_INTAKE_MENTION_USER_IDS_JSON` to a JSON array
-   of recipient IDs, such as `["U0123456789", "U0987654321"]`. Use real operator
-   settings, not these synthetic examples. Confirm Actions policies allow the
-   pinned checkout, setup-node and Slack actions and the `ubuntu-latest` runner.
+5. Provision the Actions secret `HEALTH_VALIDATION_INTAKE_ROUTING_JSON` with an
+   object containing `channel_id` and `mention_user_ids`, for example
+   `{"channel_id":"C0123456789","mention_user_ids":["U0123456789","U0987654321"]}`.
+   Use real operator settings, not these synthetic examples. Keep the complete
+   object in a secret so runner environment logging masks the input before code
+   starts. Confirm Actions policies allow pinned checkout/setup-node actions and
+   the `ubuntu-latest` runner, with egress to GitHub and Slack.
 6. Name the operator for affiliation review, queue checks and delivery
    reconciliation. Keep a shared private journal with repository/item identity,
    run reference, decision revision, delivery state, actual Slack receipt,
@@ -102,6 +105,12 @@ An authorized operator must complete these steps before enabling the workflow:
 GitHub receives only the affiliation labels and request marker. The workflow does
 not provision label definitions, bot installations, channel access or secrets.
 Check its execution policies and credential access for actual fork PR events.
+The bot needs `chat:write` and access to the intended channel. Sending uses one
+native HTTPS POST to Slack's `chat.postMessage` API, with an absolute 10-second
+deadline covering connection and receipt consumption and a 64 KiB response limit.
+It follows no redirects and makes no automatic retries. Routing and the raw
+receipt stay inside the trusted process; they are not workflow outputs or separate
+step inputs.
 
 ## Supervised verification
 
@@ -112,12 +121,12 @@ Create approved controlled openings and record actual results for:
 - Correct recipient mentions, destination and source-to-receipt time.
 - Preservation of unrelated labels and assignees.
 - Replay with an existing request marker: it stops for reconciliation and never
-  produces a second send payload.
+  makes another post attempt.
 - Missing sender, invalid routing, GitHub failure, Slack rejection and ambiguous
   timeout/interruption. Do not delete an intent or rerun blindly.
 
 If delivery is uncertain, check Slack and the private journal before an authorized
-retry. The Slack action has automatic retries disabled. A failed or interrupted
+retry. The sender makes no automatic retries. A failed or interrupted
 run may still have posted a message. A green run and an intent label do not replace
 the private receipt record. Keep evidence and receipts out of public logs and
 artifacts; do not enable verbose debugging with private inputs.
@@ -145,9 +154,10 @@ For quick local iteration with Node 22 or newer:
 node --test tools/contributor-intake/*.test.mjs
 ```
 
-`intake-plan.mjs --input PATH` (or `--input -`) generates a read-only preview from
-sanitized item metadata, reviewed records and explicit routing. It refuses apply
-mode. Run previews privately when the input contains affiliation records.
+`node tools/contributor-intake/intake-plan.mjs --input PATH` (or `--input -`)
+generates a read-only preview from sanitized item metadata, reviewed records and
+explicit routing. It refuses apply mode. Run previews privately when the input
+contains affiliation records.
 
 ## Rollout boundary
 

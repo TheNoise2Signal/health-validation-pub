@@ -96,7 +96,7 @@ function itemErrors(item) {
   if (!['open', 'closed'].includes(item.state)) errors.push('invalid_state');
   if ((item.kind === 'pr' || item.draft !== undefined) && typeof item.draft !== 'boolean') errors.push('invalid_draft');
   if (timestamp(item.created_at) === null) errors.push('invalid_created_at');
-  if (!Array.isArray(item.labels) || !item.labels.every(nonempty) || new Set(item.labels).size !== item.labels.length) errors.push('invalid_labels');
+  if (!Array.isArray(item.labels) || !Array.from(item.labels).every(nonempty) || new Set(item.labels).size !== item.labels.length) errors.push('invalid_labels');
   if (!Array.isArray(item.assignees)) errors.push('invalid_assignees');
   return errors;
 }
