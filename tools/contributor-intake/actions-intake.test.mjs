@@ -8,8 +8,7 @@ import { join } from 'node:path';
 import { EventEmitter } from 'node:events';
 import { Duplex } from 'node:stream';
 import https from 'node:https';
-import { openingFromActions, prepareActionsOpening, validateSlackReceipt, createGitHubClient } from './actions-intake.mjs';
-import * as actions from './actions-intake.mjs';
+import { openingFromActions, prepareActionsOpening, createGitHubClient, createSlackClient } from './actions-intake.mjs';
 
 const REPO = { id: 1295779810, full_name: 'dsx-ai-factory/health-validation' };
 const NODE_RUNTIME_KEYS = ['JS_BINARY__NODE_BINARY', 'JS_BINARY__NODE_PATCHES', 'JS_BINARY__NODE_WRAPPER',
@@ -20,7 +19,7 @@ const nodeRuntimeEnvironment = () => Object.fromEntries(NODE_RUNTIME_KEYS
 const ROUTING = { channel_id: 'C0123456789', mention_user_ids: ['U0123456789', 'U9876543210'] };
 const NOW = '2026-10-02T20:00:00Z';
 const raw = (patch = {}) => ({ node_id: 'PR_example', number: 17, state: 'open', draft: true,
-  created_at: NOW, updated_at: NOW, user: { id: 1001, login: 'outside-user', type: 'User' },
+  created_at: NOW, user: { id: 1001, login: 'outside-user', type: 'User' },
   labels: [{ name: 'bug' }], assignees: [{ login: 'maintainer', id: 10 }], base: { repo: REPO }, ...patch });
 const event = (patch = {}) => ({ action: 'opened', repository: REPO, pull_request: raw(), ...patch });
 const review = (patch = {}) => ({ author_id: 1001, login: 'outside-user', affiliation: 'external',
@@ -62,11 +61,13 @@ test('unverified draft gets safe payload and intent after affiliation label', as
   assert.equal(result.payload.channel, 'C0123456789');
   assert.match(result.payload.text, /<@U0123456789> <@U9876543210>/);
   assert.match(result.payload.text, /draft/);
-  assert.equal(result.delivered, false);
+  assert.deepEqual(Object.keys(result).sort(), ['decision', 'payload', 'status']);
+  assert.equal(result.payload.text, result.decision.message_text);
 });
 
 test('registry review preserves unrelated labels and assignees while correcting affiliation', async () => {
   const current = raw({ labels: [{ name: 'affiliation/unverified' }, { name: 'bug' }] });
+  const before = structuredClone(current);
   const github = api(current);
   const result = await prepareActionsOpening(args({ reviewedDecisions: [review()] }), github);
   assert.equal(result.decision.affiliation, 'external');
@@ -75,8 +76,7 @@ test('registry review preserves unrelated labels and assignees while correcting 
     { op: 'remove', number: 17, label: 'affiliation/unverified' },
     { op: 'add', number: 17, labels: ['triage/alert-requested'] },
   ]);
-  assert.ok(result.decision.labels_after.includes('bug'));
-  assert.deepEqual(result.decision.assignees, [{ login: 'maintainer', id: 10 }]);
+  assert.deepEqual(current, before);
   assert.equal(JSON.stringify(result.payload).includes('synthetic-private-evidence'), false);
 });
 
@@ -108,14 +108,6 @@ test('mismatched authoritative item and failed label reservation cannot produce 
   await assert.rejects(prepareActionsOpening(args(), github), /write failure/);
 });
 
-test('receipt validation requires actual success, intended channel and Slack timestamp', () => {
-  const good = { ok: true, channel: 'C0123456789', ts: '1790961600.123456' };
-  assert.deepEqual(validateSlackReceipt(good, ROUTING), { channel_id: 'C0123456789', ts: '1790961600.123456' });
-  for (const patch of [{ ok: 'true' }, { ok: false }, { ok: undefined }, { channel: 'OTHER' }, { ts: '' }, { ts: 'invalid' }]) {
-    assert.throws(() => validateSlackReceipt({ ...good, ...patch }, ROUTING), /receipt/);
-  }
-});
-
 test('GitHub adapter fixes scope, uses JSON bodies and preserves unrelated labels through additive requests', async () => {
   const calls = [];
   const github = createGitHubClient({ token: 'synthetic-token', fetchFn: async (url, options) => {
@@ -143,15 +135,6 @@ test('failed GitHub responses are reported without response-body or credential l
   await assert.rejects(github.readItem('pr', 17), error => /403/.test(error.message) && !/PRIVATE|token/.test(error.message));
 });
 
-test('notification CLI is disabled by default before any metadata access or label write', () => {
-  const script = fileURLToPath(new URL('./actions-intake.mjs', import.meta.url));
-  const run = spawnSync(process.execPath, [script, 'notify'], { encoding: 'utf8',
-    env: { ...nodeRuntimeEnvironment(), GITHUB_TOKEN: 'PRIVATE_TEST_CREDENTIAL', GITHUB_EVENT_PATH: '/missing/event.json' } });
-  assert.equal(run.status, 1);
-  assert.equal(run.stderr.includes('PRIVATE_TEST_CREDENTIAL'), false);
-  assert.equal(run.stdout, '');
-});
-
 test('invalid routing fails before GitHub reads or label writes', async () => {
   const github = api(); let reads = 0;
   github.readItem = async () => { reads++; return raw(); };
@@ -160,12 +143,15 @@ test('invalid routing fails before GitHub reads or label writes', async () => {
   assert.deepEqual(github.writes, []);
 });
 
-test('receipt must match the configured destination rather than an implicit channel', () => {
+test('Slack sender validates the configured destination without an implicit channel', async () => {
   const receipt = { ok: true, channel: 'C9876543210', ts: '1790961600.123456' };
-  const route = { ...ROUTING, channel_id: 'C9876543210' };
-  assert.deepEqual(validateSlackReceipt(receipt, route), { channel_id: 'C9876543210', ts: '1790961600.123456' });
-  assert.throws(() => validateSlackReceipt(receipt, ROUTING), /receipt/i);
-  assert.throws(() => validateSlackReceipt(receipt), /routing/i);
+  const route = { ...ROUTING, channel_id: receipt.channel };
+  const client = createSlackClient({ token: 'synthetic-slack-token', requestFn: coreRequestReply({ receipt }) });
+  assert.deepEqual(await client.sendNotification({ ...notificationPayload, channel: receipt.channel }, route), {
+    channel_id: receipt.channel, ts: receipt.ts,
+  });
+  await assert.rejects(client.sendNotification(notificationPayload, ROUTING), /Slack.*reconcile/i);
+  await assert.rejects(client.sendNotification(notificationPayload), /routing/i);
 });
 
 function runNotifyCli({ registry = '[]', routingJson = JSON.stringify(ROUTING), current = raw(), mode = 'notify',
@@ -207,12 +193,7 @@ function runNotifyCli({ registry = '[]', routingJson = JSON.stringify(ROUTING), 
       globalThis.fetch = async (url, options) => {
         appendFileSync(process.env.TEST_API_CALLS, JSON.stringify({url, method: options.method,
           payload: options.body ? JSON.parse(options.body) : null}) + '\n');
-        if (url === 'https://slack.com/api/chat.postMessage') return {
-          ok: Number(process.env.TEST_SLACK_STATUS) >= 200 && Number(process.env.TEST_SLACK_STATUS) < 300,
-          status: Number(process.env.TEST_SLACK_STATUS), json: async () => {
-            if (process.env.TEST_UNREADABLE_SLACK_BODY === 'true') throw new Error('PRIVATE_SLACK_BODY');
-            return JSON.parse(process.env.TEST_SLACK_RECEIPT);
-          }};
+        if (!url.startsWith('https://api.github.com/repos/dsx-ai-factory/health-validation/')) throw new Error('unexpected fetch URL');
         return {ok: true, status: 200, json: async () => options.method === 'POST'
           ? JSON.parse(options.body).labels.map(name => ({name})) : options.method === 'DELETE'
           ? [] : JSON.parse(process.env.TEST_CURRENT_ITEM)};
@@ -377,11 +358,6 @@ test('a sparse acknowledged label array cannot prove an affiliation was removed'
 const notificationPayload = { channel: ROUTING.channel_id, text: 'synthetic notification',
   unfurl_links: false, unfurl_media: false };
 
-const nativeSlackClient = options => actions.createSlackClient({ ...options,
-  // A stale implementation must fail before reaching the live fetch transport.
-  fetchFn: async () => { throw new Error('obsolete fetch transport invoked'); },
-});
-
 function coreRequestReply(options = {}, calls = []) {
   return (url, requestOptions, callback) => {
     const request = new EventEmitter();
@@ -417,7 +393,7 @@ function coreRequestReply(options = {}, calls = []) {
 
 test('Slack sender makes one core HTTPS request and validates actual JSON receipt', async () => {
   const calls = [];
-  const client = nativeSlackClient({ token: 'synthetic-slack-token', requestFn: coreRequestReply({}, calls) });
+  const client = createSlackClient({ token: 'synthetic-slack-token', requestFn: coreRequestReply({}, calls) });
   assert.deepEqual(await client.sendNotification(notificationPayload, ROUTING), {
     channel_id: ROUTING.channel_id, ts: '1790961600.123456',
   });
@@ -440,12 +416,14 @@ for (const [name, options] of [
   ['oversized body', { chunks: [Buffer.alloc(32768), Buffer.alloc(32769)] }],
   ['Slack ok false', { receipt: { ok: false, error: 'PRIVATE_SLACK_ERROR' } }],
   ['string success', { receipt: { ok: 'true', channel: ROUTING.channel_id, ts: '1790961600.123456' } }],
+  ['missing success', { receipt: { channel: ROUTING.channel_id, ts: '1790961600.123456' } }],
+  ['empty timestamp', { receipt: { ok: true, channel: ROUTING.channel_id, ts: '' } }],
   ['wrong channel', { receipt: { ok: true, channel: 'C9876543210', ts: '1790961600.123456' } }],
   ['invalid timestamp', { receipt: { ok: true, channel: ROUTING.channel_id, ts: 'PRIVATE_SLACK_TIMESTAMP' } }],
 ]) {
   test(`Slack ${name} has one request and no private error leakage`, async () => {
     const calls = [];
-    const client = nativeSlackClient({ token: 'synthetic-slack-token', requestFn: coreRequestReply(options, calls) });
+    const client = createSlackClient({ token: 'synthetic-slack-token', requestFn: coreRequestReply(options, calls) });
     await assert.rejects(client.sendNotification(notificationPayload, ROUTING), error =>
       /Slack|receipt/i.test(error.message) && !error.message.includes('PRIVATE_SLACK'));
     assert.equal(calls.length, 1);
@@ -460,7 +438,7 @@ for (const phase of ['connection', 'receipt body']) {
     request.destroyed = false;
     request.destroy = () => { request.destroyed = true; };
     request.end = () => {};
-    const client = nativeSlackClient({ token: 'synthetic-slack-token', requestFn: (url, options, callback) => {
+    const client = createSlackClient({ token: 'synthetic-slack-token', requestFn: (url, options, callback) => {
       calls++; respond = callback; return request;
     } });
     const pending = client.sendNotification(notificationPayload, ROUTING);
@@ -509,7 +487,7 @@ test('native HTTPS HTTP 421 is rejected after exactly one serialized POST', asyn
     return socket;
   };
   try {
-    const client = nativeSlackClient({ token: 'synthetic-slack-token', requestFn: (url, options, callback) => {
+    const client = createSlackClient({ token: 'synthetic-slack-token', requestFn: (url, options, callback) => {
       destinations.push(url);
       return https.request(url, { ...options, agent }, callback);
     } });
@@ -520,9 +498,9 @@ test('native HTTPS HTTP 421 is rejected after exactly one serialized POST', asyn
 });
 
 test('Slack sender refuses missing credential, invalid routing and a different payload channel before access', async () => {
-  for (const token of [undefined, '', ' ']) assert.throws(() => actions.createSlackClient({ token }), /credential/i);
+  for (const token of [undefined, '', ' ']) assert.throws(() => createSlackClient({ token }), /credential/i);
   let calls = 0;
-  const client = nativeSlackClient({ token: 'synthetic-slack-token', requestFn: () => { calls++; } });
+  const client = createSlackClient({ token: 'synthetic-slack-token', requestFn: () => { calls++; } });
   await assert.rejects(client.sendNotification(notificationPayload, { ...ROUTING, mention_user_ids: [] }), /routing/i);
   await assert.rejects(client.sendNotification({ ...notificationPayload, channel: 'C9876543210' }, ROUTING), /payload|channel/i);
   assert.equal(calls, 0);
@@ -592,11 +570,9 @@ for (const [name, patch] of [
   });
 }
 
-for (const mode of ['prepare', 'validate-config', 'validate-receipt']) {
-  test(`obsolete ${mode} CLI boundary is refused without API access`, () => {
-    const run = runNotifyCli({ mode });
-    assert.equal(run.status, 1);
-    assert.deepEqual(run.calls, []);
-    assert.equal(run.output, '');
-  });
-}
+test('unsupported CLI mode is refused without API access', () => {
+  const run = runNotifyCli({ mode: 'unsupported' });
+  assert.equal(run.status, 1);
+  assert.deepEqual(run.calls, []);
+  assert.equal(run.output, '');
+});

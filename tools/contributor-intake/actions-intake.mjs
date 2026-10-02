@@ -3,7 +3,6 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { request as httpsRequest } from 'node:https';
 import { planIntake, validateRouting } from './intake-plan.mjs';
-export { validateRouting } from './intake-plan.mjs';
 
 const REPO = { id: 1295779810, full_name: 'dsx-ai-factory/health-validation' };
 const INTENT = 'triage/alert-requested';
@@ -20,9 +19,8 @@ function normalize(raw, kind) {
   if (kind === 'pr' && raw.base?.repo) scope(raw.base.repo);
   return { repository: { ...REPO }, node_id: raw.node_id, number: raw.number, kind,
     state: raw.state, draft: kind === 'pr' ? raw.draft : false,
-    created_at: raw.created_at, updated_at: raw.updated_at, user: raw.user ?? null,
-    labels: Array.isArray(raw.labels) ? raw.labels.map(label => typeof label === 'string' ? label : label?.name) : raw.labels,
-    assignees: raw.assignees };
+    created_at: raw.created_at, user: raw.user ?? null,
+    labels: Array.isArray(raw.labels) ? raw.labels.map(label => typeof label === 'string' ? label : label?.name) : raw.labels };
 }
 
 /** Trusted Actions event input only. No head SHA, PR branch or contribution text is executed. */
@@ -32,7 +30,7 @@ export function openingFromActions(eventName, payload, routing) {
   scope(payload.repository);
   const kind = eventName === 'issues' ? 'issue' : 'pr';
   const item = normalize(kind === 'pr' ? payload.pull_request : payload.issue, kind);
-  const decision = planIntake({ evaluated_at: item.created_at, items: [item], routing: route }).decisions[0];
+  const decision = planIntake({ evaluated_at: item.created_at, item, routing: route });
   if (decision.input_error.length) throw new Error('invalid opening metadata');
   return item;
 }
@@ -41,29 +39,28 @@ export function openingFromActions(eventName, payload, routing) {
 export async function prepareActionsOpening({ eventName, payload, evaluatedAt, routing, reviewedDecisions = [] }, github) {
   const route = validateRouting(routing);
   const eventItem = openingFromActions(eventName, payload, route);
-  if (!eventItem) return { status: 'ignored', payload: null, delivered: false };
+  if (!eventItem) return { status: 'ignored', payload: null };
   const current = normalize(await github.readItem(eventItem.kind, eventItem.number), eventItem.kind);
   if (current.node_id !== eventItem.node_id || current.number !== eventItem.number) throw new Error('authoritative item identity mismatch');
-  const decision = planIntake({ evaluated_at: evaluatedAt, items: [current], routing: route,
-    reviewed_decisions: reviewedDecisions }).decisions[0];
+  const decision = planIntake({ evaluated_at: evaluatedAt, item: current, routing: route,
+    reviewed_decisions: reviewedDecisions });
   if (decision.input_error.length) throw new Error('invalid authoritative item metadata');
   if (decision.label_changes.add.length) await github.addLabels(current.number, decision.label_changes.add);
   for (const label of decision.label_changes.remove) await github.removeLabel(current.number, label);
-  if (!decision.alert_eligible) return { status: 'suppressed', decision, payload: null, delivered: false };
-  if (!decision.alert_request_needed) return { status: 'reconcile', decision, payload: null, delivered: false };
+  if (!decision.alert_eligible) return { status: 'suppressed', decision, payload: null };
+  if (!decision.alert_request_needed) return { status: 'reconcile', decision, payload: null };
   await github.addLabels(current.number, [INTENT]);
-  return { status: 'send', decision, delivered: false,
-    payload: { channel: route.channel_id, text: decision.message_preview.text, unfurl_links: false, unfurl_media: false } };
+  return { status: 'send', decision,
+    payload: { channel: route.channel_id, text: decision.message_text, unfurl_links: false, unfurl_media: false } };
 }
 
-export function validateSlackReceipt(receipt, routing) {
+function validateSlackReceipt(receipt, routing) {
   const route = validateRouting(routing);
   if (!record(receipt) || receipt.ok !== true || receipt.channel !== route.channel_id ||
       typeof receipt.ts !== 'string' || !/^\d{1,20}\.\d{1,10}$/.test(receipt.ts)) throw new Error('Slack receipt unverified; reconcile intent before retry');
   return { channel_id: receipt.channel, ts: receipt.ts };
 }
 
-/** Fixed-scope GitHub transport with additive labels and refused redirects. */
 export function createGitHubClient({ token, fetchFn = globalThis.fetch }) {
   if (typeof token !== 'string' || !token.trim()) throw new Error('GitHub credential unavailable');
   const root = `https://api.github.com/repos/${REPO.full_name}`;

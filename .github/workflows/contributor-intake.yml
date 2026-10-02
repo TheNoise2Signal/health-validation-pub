@@ -46,8 +46,3 @@ jobs:
           HEALTH_VALIDATION_INTAKE_ROUTING_JSON: ${{ secrets.HEALTH_VALIDATION_INTAKE_ROUTING_JSON }}
           HEALTH_VALIDATION_REVIEWED_DECISIONS_JSON: ${{ secrets.HEALTH_VALIDATION_REVIEWED_DECISIONS_JSON }}
         run: node tools/contributor-intake/actions-intake.mjs notify
-
-      - name: Surface unresolved delivery
-        if: failure()
-        run: |
-          echo 'Operator review needed. An intent is not a receipt; inspect Slack and the private journal before retrying.' >&2
