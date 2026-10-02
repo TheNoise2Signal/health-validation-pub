@@ -1,0 +1,20 @@
+load("@aspect_rules_js//js:defs.bzl", "js_test")
+
+js_test(
+    name = "planner_test",
+    size = "small",
+    data = ["intake-plan.mjs"],
+    entry_point = "intake-plan.test.mjs",
+    node_options = ["--test"],
+)
+
+js_test(
+    name = "actions_test",
+    size = "small",
+    data = [
+        "actions-intake.mjs",
+        "intake-plan.mjs",
+    ],
+    entry_point = "actions-intake.test.mjs",
+    node_options = ["--test"],
+)

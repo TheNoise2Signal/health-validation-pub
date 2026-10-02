@@ -1,0 +1,82 @@
+# Disabled until an operator provisions the sender, routing and supervised pilot.
+name: Contribution intake pilot
+
+on:
+  issues:
+    types: [opened]
+  pull_request_target:
+    types: [opened]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+concurrency:
+  group: contribution-intake-${{ github.repository }}-${{ github.event.issue.number || github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  intake:
+    if: github.repository == 'dsx-ai-factory/health-validation' && vars.HEALTH_VALIDATION_INTAKE_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      HEALTH_VALIDATION_INTAKE_CHANNEL: ${{ vars.HEALTH_VALIDATION_INTAKE_CHANNEL }}
+      HEALTH_VALIDATION_INTAKE_MENTION_USER_IDS_JSON: ${{ vars.HEALTH_VALIDATION_INTAKE_MENTION_USER_IDS_JSON }}
+    steps:
+      # Contribution metadata is untrusted; only reviewed default-branch code runs.
+      - name: Checkout trusted main only
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: main
+          persist-credentials: false
+          allow-unsafe-pr-checkout: false
+
+      - name: Set up Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      - name: Verify sender and routing before reserving intent
+        env:
+          SLACK_TOKEN: ${{ secrets.HEALTH_VALIDATION_SLACK_BOT_TOKEN }}
+        run: |
+          if [ -z "$SLACK_TOKEN" ]; then
+            echo 'Slack sender is unavailable; no alert intent was reserved.' >&2
+            exit 1
+          fi
+          node tools/contributor-intake/actions-intake.mjs validate-config
+
+      - name: Classify metadata and reserve intent
+        id: intake
+        env:
+          HEALTH_VALIDATION_APPLY_LABELS: 'true'
+          GITHUB_TOKEN: ${{ github.token }}
+          HEALTH_VALIDATION_REVIEWED_DECISIONS_JSON: ${{ secrets.HEALTH_VALIDATION_REVIEWED_DECISIONS_JSON }}
+        run: node tools/contributor-intake/actions-intake.mjs prepare
+
+      - name: Send opening notification
+        if: steps.intake.outputs.send == 'true'
+        id: slack
+        uses: slackapi/slack-github-action@91efab103c0de0a537f72a35f6b8cda0ee76bf0a # v2.1.1
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.HEALTH_VALIDATION_SLACK_BOT_TOKEN }}
+          payload: ${{ steps.intake.outputs.payload }}
+          errors: 'true'
+          retries: '0'
+
+      - name: Validate actual Slack receipt
+        if: steps.intake.outputs.send == 'true'
+        env:
+          HEALTH_INTAKE_SLACK_OK: ${{ steps.slack.outputs.ok }}
+          HEALTH_INTAKE_SLACK_CHANNEL: ${{ steps.slack.outputs.channel_id }}
+          HEALTH_INTAKE_SLACK_TS: ${{ steps.slack.outputs.ts }}
+        run: node tools/contributor-intake/actions-intake.mjs validate-receipt
+
+      - name: Surface unresolved delivery
+        if: failure()
+        run: |
+          echo 'Operator review needed. An intent is not a receipt; inspect Slack and the private journal before retrying.' >&2
