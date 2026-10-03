@@ -414,7 +414,7 @@ for (const [name, options] of [
   ['unparseable response', { body: 'PRIVATE_SLACK_JSON' }], ['body error', { responseError: true }],
   ['aborted body', { abortBody: true }], ['premature body close', { closeBody: true }],
   ['oversized body', { chunks: [Buffer.alloc(32768), Buffer.alloc(32769)] }],
-  ['Slack ok false', { receipt: { ok: false, error: 'PRIVATE_SLACK_ERROR' } }],
+  ['ok false', { receipt: { ok: false, error: 'PRIVATE_SLACK_ERROR' } }],
   ['string success', { receipt: { ok: 'true', channel: ROUTING.channel_id, ts: '1790961600.123456' } }],
   ['missing success', { receipt: { channel: ROUTING.channel_id, ts: '1790961600.123456' } }],
   ['empty timestamp', { receipt: { ok: true, channel: ROUTING.channel_id, ts: '' } }],
@@ -513,7 +513,7 @@ test('notification CLI reserves intent before the single post and exports no pri
   assert.deepEqual(run.calls[2].payload.labels, ['triage/alert-requested']);
   assert.equal(run.calls[3].url, 'https://slack.com/api/chat.postMessage');
   assert.match(run.calls[3].payload.text, /affiliation unverified; open; draft/);
-  assert.match(run.stdout, /receipt validated/i);
+  assert.match(run.stdout, /Slack confirmed the post/i);
   assert.equal(run.output, '');
   for (const value of [ROUTING.channel_id, ...ROUTING.mention_user_ids, '1790961600.123456', 'outside-user',
     'synthetic-github-token', 'synthetic-slack-token', 'synthetic-private-evidence', 'synthetic-reviewer']) {

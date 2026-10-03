@@ -7,40 +7,38 @@ import { planIntake, validateRouting } from './intake-plan.mjs';
 const REPO = { id: 1295779810, full_name: 'dsx-ai-factory/health-validation' };
 const INTENT = 'triage/alert-requested';
 const AFFILIATIONS = new Set(['nvidia', 'external', 'unverified', 'bot'].map(value => `affiliation/${value}`));
-const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
-const number = value => Number.isSafeInteger(value) && value > 0;
+const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+const positiveInteger = value => Number.isSafeInteger(value) && value > 0;
 
-function scope(repository) {
-  if (!record(repository) || repository.id !== REPO.id || repository.full_name !== REPO.full_name) throw new Error('repository outside intake scope');
+function assertRepositoryScope(repository) {
+  if (!isRecord(repository) || repository.id !== REPO.id || repository.full_name !== REPO.full_name) throw new Error('repository outside intake scope');
 }
 
-function normalize(raw, kind) {
-  if (!record(raw)) throw new Error('missing item metadata');
-  if (kind === 'pr' && raw.base?.repo) scope(raw.base.repo);
+function normalizeItem(raw, kind) {
+  if (!isRecord(raw)) throw new Error('missing item metadata');
+  if (kind === 'pr' && raw.base?.repo) assertRepositoryScope(raw.base.repo);
   return { repository: { ...REPO }, node_id: raw.node_id, number: raw.number, kind,
     state: raw.state, draft: kind === 'pr' ? raw.draft : false,
     created_at: raw.created_at, user: raw.user ?? null,
     labels: Array.isArray(raw.labels) ? raw.labels.map(label => typeof label === 'string' ? label : label?.name) : raw.labels };
 }
 
-/** Trusted Actions event input only. No head SHA, PR branch or contribution text is executed. */
 export function openingFromActions(eventName, payload, routing) {
   const route = validateRouting(routing);
   if (!['issues', 'pull_request_target'].includes(eventName) || payload?.action !== 'opened') return null;
-  scope(payload.repository);
+  assertRepositoryScope(payload.repository);
   const kind = eventName === 'issues' ? 'issue' : 'pr';
-  const item = normalize(kind === 'pr' ? payload.pull_request : payload.issue, kind);
+  const item = normalizeItem(kind === 'pr' ? payload.pull_request : payload.issue, kind);
   const decision = planIntake({ evaluated_at: item.created_at, item, routing: route });
   if (decision.input_error.length) throw new Error('invalid opening metadata');
   return item;
 }
 
-/** Run under a single per-item Actions concurrency group. An intent is never a receipt. */
 export async function prepareActionsOpening({ eventName, payload, evaluatedAt, routing, reviewedDecisions = [] }, github) {
   const route = validateRouting(routing);
   const eventItem = openingFromActions(eventName, payload, route);
   if (!eventItem) return { status: 'ignored', payload: null };
-  const current = normalize(await github.readItem(eventItem.kind, eventItem.number), eventItem.kind);
+  const current = normalizeItem(await github.readItem(eventItem.kind, eventItem.number), eventItem.kind);
   if (current.node_id !== eventItem.node_id || current.number !== eventItem.number) throw new Error('authoritative item identity mismatch');
   const decision = planIntake({ evaluated_at: evaluatedAt, item: current, routing: route,
     reviewed_decisions: reviewedDecisions });
@@ -48,6 +46,7 @@ export async function prepareActionsOpening({ eventName, payload, evaluatedAt, r
   if (decision.label_changes.add.length) await github.addLabels(current.number, decision.label_changes.add);
   for (const label of decision.label_changes.remove) await github.removeLabel(current.number, label);
   if (!decision.alert_eligible) return { status: 'suppressed', decision, payload: null };
+  // The previous attempt may have posted even if its receipt was lost.
   if (!decision.alert_request_needed) return { status: 'reconcile', decision, payload: null };
   await github.addLabels(current.number, [INTENT]);
   return { status: 'send', decision,
@@ -56,7 +55,7 @@ export async function prepareActionsOpening({ eventName, payload, evaluatedAt, r
 
 function validateSlackReceipt(receipt, routing) {
   const route = validateRouting(routing);
-  if (!record(receipt) || receipt.ok !== true || receipt.channel !== route.channel_id ||
+  if (!isRecord(receipt) || receipt.ok !== true || receipt.channel !== route.channel_id ||
       typeof receipt.ts !== 'string' || !/^\d{1,20}\.\d{1,10}$/.test(receipt.ts)) throw new Error('Slack receipt unverified; reconcile intent before retry');
   return { channel_id: receipt.channel, ts: receipt.ts };
 }
@@ -65,8 +64,8 @@ export function createGitHubClient({ token, fetchFn = globalThis.fetch }) {
   if (typeof token !== 'string' || !token.trim()) throw new Error('GitHub credential unavailable');
   const root = `https://api.github.com/repos/${REPO.full_name}`;
   const alreadyAbsent = Symbol('label already absent');
-  const labelArray = value => Array.isArray(value) && Array.from(value).every(label => record(label) && typeof label.name === 'string' && label.name.trim());
-  const checkedNumber = value => { if (!number(value)) throw new Error('invalid item number'); return value; };
+  const labelArray = value => Array.isArray(value) && Array.from(value).every(label => isRecord(label) && typeof label.name === 'string' && label.name.trim());
+  const checkedNumber = value => { if (!positiveInteger(value)) throw new Error('invalid item number'); return value; };
   async function request(path, method = 'GET', body) {
     let response;
     try {
@@ -105,13 +104,13 @@ export function createGitHubClient({ token, fetchFn = globalThis.fetch }) {
   };
 }
 
-/** One attempt only: an interrupted post can succeed without a readable receipt. */
+// Core HTTPS avoids fetch's implicit HTTP 421 POST replay.
 export function createSlackClient({ token, requestFn = httpsRequest }) {
   if (typeof token !== 'string' || !token.trim()) throw new Error('Slack credential unavailable');
   return {
     async sendNotification(payload, routing) {
       const route = validateRouting(routing);
-      if (!record(payload) || payload.channel !== route.channel_id || typeof payload.text !== 'string' || !payload.text.trim() ||
+      if (!isRecord(payload) || payload.channel !== route.channel_id || typeof payload.text !== 'string' || !payload.text.trim() ||
           payload.unfurl_links !== false || payload.unfurl_media !== false) throw new Error('Slack payload invalid');
       const body = JSON.stringify(payload);
       return new Promise((resolve, reject) => {
@@ -194,7 +193,7 @@ async function cli() {
   if (!evidenceWarning && result.decision?.diagnostics.includes('review_malformed')) warnEvidence();
   if (result.status === 'send') {
     await slack.sendNotification(result.payload, routing);
-    process.stdout.write('Notification receipt validated. Record it manually in the private pilot journal.\n');
+    process.stdout.write('Slack confirmed the post. Copy its link to the private journal.\n');
   } else {
     process.stdout.write(`Intake notification: ${result.status}. No Slack post attempted.\n`);
   }

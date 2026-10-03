@@ -130,7 +130,7 @@ test('actual contribution Bot suppresses; labeling sender does not decide author
   assert.equal(human.affiliation, 'unverified'); assert.equal(human.alert_eligible, true);
 });
 
-test('draft and recovered closed PRs retain lifecycle without mutating creation time', () => {
+test('draft and closed PRs retain state without mutating creation time', () => {
   const data = input({ item: item({ kind: 'pr', state: 'closed', draft: true }) });
   const result = planIntake(data);
   assert.ok(result.message_text.includes('PR #23 (affiliation unverified; already closed; draft)'));
