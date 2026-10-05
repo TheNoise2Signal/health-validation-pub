@@ -9,7 +9,13 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/dsx-ai-factory/health-validation/catalog/cpu"
+	"github.com/dsx-ai-factory/health-validation/catalog/gpu"
 	"github.com/dsx-ai-factory/health-validation/catalog/health"
+	"github.com/dsx-ai-factory/health-validation/catalog/infiniband"
+	"github.com/dsx-ai-factory/health-validation/catalog/node"
+	"github.com/dsx-ai-factory/health-validation/catalog/nvlink"
+	"github.com/dsx-ai-factory/health-validation/catalog/xid"
 	"github.com/dsx-ai-factory/health-validation/collect/observation"
 )
 
@@ -37,6 +43,17 @@ func ToMeasurements(observations []*observation.Observation) []health.Measuremen
 		b.add(current)
 	}
 	return b.measurements()
+}
+
+// measurementTypes are the measurement types ToMeasurements rebuilds. Each
+// domain has one type, so a <domain>.<field> signal identifies its type.
+var measurementTypes = []health.Measurement{
+	gpu.GPUMeasurement{},
+	nvlink.NVLinkMeasurement{},
+	cpu.CPUMeasurement{},
+	node.NodeMeasurement{},
+	xid.XidMeasurement{},
+	infiniband.LinkFlapMeasurement{},
 }
 
 // schema describes one measurement type for ingestion.

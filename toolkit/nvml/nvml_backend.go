@@ -616,6 +616,10 @@ func measureDeviceFabric(dev gonvml.Device, m *nvlink.NVLinkMeasurement) {
 			gonvml.GPU_FABRIC_HEALTH_MASK_SHIFT_ACCESS_TIMEOUT_RECOVERY,
 			gonvml.GPU_FABRIC_HEALTH_MASK_WIDTH_ACCESS_TIMEOUT_RECOVERY,
 		) == gonvml.GPU_FABRIC_HEALTH_MASK_ACCESS_TIMEOUT_RECOVERY_TRUE
+		// Each health condition is reported as true, false, or not
+		// supported by this GPU and driver. Like the clock-event bits, an
+		// unsupported condition stays false rather than failing the check;
+		// it is marked so an export can tell it apart from a reported false.
 		for _, bit := range []struct {
 			signal                     string
 			shift, width, notSupported uint32
@@ -634,7 +638,8 @@ func measureDeviceFabric(dev gonvml.Device, m *nvlink.NVLinkMeasurement) {
 			gonvml.Return(info.Status) != gonvml.SUCCESS
 	case gonvml.ERROR_NOT_SUPPORTED:
 		// On GB200/GB300 fabric registration is mandatory, so a not-supported
-		// result is flagged as unregistered rather than skipped.
+		// result is flagged as unregistered rather than skipped. That is a
+		// value, so only the health conditions are marked unsupported.
 		m.FabricRegistrationIncomplete = true
 		m.MarkUnsupported(
 			nvlink.SignalFabricBandwidthDegraded,

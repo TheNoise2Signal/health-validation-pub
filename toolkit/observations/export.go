@@ -137,8 +137,15 @@ func measurementTarget(v reflect.Value, nodeID string, failures map[string][]err
 	return observation.NodeTarget(nodeID)
 }
 
-// signalName mirrors how the catalog names a measurement's signals: the
-// json tag, or the Go field name for a tag carrying only options.
+// signalName mirrors how the catalog names a measurement's signals (its
+// evaluation package's fieldSignalKey): the json tag, or the Go field name
+// for a tag carrying only options. For example:
+//
+//	GPUID string `json:"gpu_id"`          → "gpu_id"
+//	Since string `json:"since,omitempty"` → "since"
+//	Extra int    `json:",omitempty"`      → "Extra"
+//	Debug string `json:"-"`               → not a signal
+//	errors []health.ErroredMeasurement    → not a signal (unexported, untagged)
 func signalName(f reflect.StructField) (string, bool) {
 	tag := f.Tag.Get("json")
 	if !f.IsExported() || tag == "" || tag == "-" {
