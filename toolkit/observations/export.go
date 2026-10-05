@@ -47,7 +47,7 @@ func FromMeasurements(sensor, nodeID string, observedAt time.Time, measurements 
 	for _, m := range measurements {
 		exported, err := export(source, nodeID, at, m)
 		if err != nil {
-			return nil, fmt.Errorf("export %s measurement: %w", m.Category(), err)
+			return nil, fmt.Errorf("export %s measurement: %w", sensor, err)
 		}
 		out = append(out, exported...)
 	}
@@ -55,8 +55,17 @@ func FromMeasurements(sensor, nodeID string, observedAt time.Time, measurements 
 }
 
 func export(source, nodeID string, at *timestamppb.Timestamp, m health.Measurement) ([]*observation.Observation, error) {
-	v := reflect.Indirect(reflect.ValueOf(m))
-	if v.Kind() != reflect.Struct {
+	// The interface fixes only the method set: a nil value, a nil pointer,
+	// or a non-struct type all satisfy it, and reflection over their fields
+	// would panic.
+	v := reflect.ValueOf(m)
+	if v.Kind() == reflect.Pointer && !v.IsNil() {
+		v = v.Elem()
+	}
+	switch {
+	case m == nil || v.Kind() == reflect.Pointer:
+		return nil, fmt.Errorf("measurement %T is nil", m)
+	case v.Kind() != reflect.Struct:
 		return nil, fmt.Errorf("measurement %T is not a struct", m)
 	}
 

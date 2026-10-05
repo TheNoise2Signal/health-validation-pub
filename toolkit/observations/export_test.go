@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -20,6 +21,35 @@ import (
 )
 
 const testNode = "node-1"
+
+// countMeasurement satisfies health.Measurement without being a struct.
+type countMeasurement int
+
+func (countMeasurement) Category() health.Category           { return health.GPU }
+func (countMeasurement) Errors() []health.ErroredMeasurement { return nil }
+
+func TestFromMeasurementsRejectsMeasurementsItCannotRead(t *testing.T) {
+	for name, tc := range map[string]struct {
+		m    health.Measurement
+		want string
+	}{
+		"nil interface": {nil, "is nil"},
+		"nil pointer":   {(*gpu.GPUMeasurement)(nil), "is nil"},
+		"non-struct":    {countMeasurement(3), "is not a struct"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := FromMeasurements("gpu", testNode, time.Unix(1, 0), tc.m)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("err = %v, want one containing %q", err, tc.want)
+			}
+		})
+	}
+
+	exported, err := FromMeasurements("gpu", testNode, time.Unix(1, 0), &gpu.GPUMeasurement{GPUID: "GPU-0"})
+	if err != nil || len(exported) == 0 {
+		t.Fatalf("a non-nil pointer must export: %v, %d observations", err, len(exported))
+	}
+}
 
 func TestFromMeasurementsKeepsCatalogSignalNames(t *testing.T) {
 	m := gpu.GPUMeasurement{GPUID: "GPU-0", AveragePowerDrawW: 412.5, GPUPstate: 2, HWThermalSlowdown: true}
