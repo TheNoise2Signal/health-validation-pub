@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"reflect"
 	"slices"
 	"strings"
@@ -256,4 +257,40 @@ func verdictSummary(t *testing.T, arch string, execution health.ExecutionContext
 		t.Fatalf("fixture should drive at least one CRITICAL verdict: %v", out)
 	}
 	return out
+}
+
+// Only the fields the toolkit's sensors treat as neutral may be reported
+// unsupported without failing; any other must not pass a check on its zero
+// value, whoever produced the batch.
+func TestToMeasurementsLimitsNeutralUnsupportedToToolkitSignals(t *testing.T) {
+	observations, err := FromMeasurements("gpu", testNode, time.Unix(1, 0), gpu.GPUMeasurement{GPUID: "GPU-0"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, o := range observations {
+		switch o.GetSignalId() {
+		case "gpu.gpu_pstate", "gpu.hw_slowdown":
+			o.Outcome = &observation.Observation_NoValue{NoValue: &observation.NoValue{Reason: observation.NoValueReasonNotSupported}}
+		}
+	}
+
+	m := only[gpu.GPUMeasurement](t, ToMeasurements(observations))
+	if got := failedSignals(m); !slices.Equal(got, []string{gpu.SignalGPUPstate}) {
+		t.Fatalf("failed signals = %v, want only %s", got, gpu.SignalGPUPstate)
+	}
+	if got := m.UnsupportedSignals(); !slices.Equal(got, []string{gpu.SignalHWSlowdown}) {
+		t.Fatalf("unsupported signals = %v, want only %s", got, gpu.SignalHWSlowdown)
+	}
+	if got := evaluate(t, "H100", []health.Measurement{m}, gpu.GPUPowerState())["gpu_power_state"]; got != health.Critical {
+		t.Fatalf("gpu_power_state = %v, want CRITICAL", got)
+	}
+
+	want := []string{
+		"gpu.hw_power_brake_slowdown", "gpu.hw_slowdown", "gpu.hw_thermal_slowdown",
+		"nvlink.fabric_access_timeout_recovery", "nvlink.fabric_bandwidth_degraded",
+		"nvlink.fabric_route_recovery_in_progress", "nvlink.fabric_route_unhealthy",
+	}
+	if got := slices.Sorted(maps.Keys(neutralFields())); !slices.Equal(got, want) {
+		t.Fatalf("neutral fields = %v, want %v", got, want)
+	}
 }

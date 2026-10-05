@@ -91,6 +91,24 @@ func schemaForDomain(domain string) *schema {
 	return nil
 }
 
+// neutralFields returns the <domain>.<field> signals whose unsupported
+// NoValue leaves the field at its zero value: the catalog fields of the
+// canonical signals marked unsupportedIsNeutral, which are the signals the
+// toolkit's sensors treat as neutral. Any other unsupported field fails, so
+// a batch from another producer cannot pass a check on a missing value.
+var neutralFields = sync.OnceValue(func() map[string]bool {
+	out := make(map[string]bool)
+	for _, mapped := range canonicalMappings {
+		if !mapped.unsupportedIsNeutral {
+			continue
+		}
+		for _, field := range mapped.catalog {
+			out[schemaFor(mapped.measurement).category+"."+field] = true
+		}
+	}
+	return out
+})
+
 // feed is how one observation writes into a measurement.
 type feed struct {
 	schema  *schema
@@ -106,9 +124,7 @@ func resolve(current *observation.Observation) (feed, bool) {
 	if domain, field, ok := strings.Cut(current.GetSignalId(), "."); ok {
 		if s := schemaForDomain(domain); s != nil {
 			if _, known := s.fields[field]; known {
-				// FromMeasurements writes NoValue only for a signal the
-				// toolkit treats as neutral.
-				return feed{schema: s, catalog: []string{field}, neutral: true}, true
+				return feed{schema: s, catalog: []string{field}, neutral: neutralFields()[current.GetSignalId()]}, true
 			}
 		}
 	}
