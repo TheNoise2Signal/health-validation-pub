@@ -294,3 +294,49 @@ func TestToMeasurementsLimitsNeutralUnsupportedToToolkitSignals(t *testing.T) {
 		t.Fatalf("neutral fields = %v, want %v", got, want)
 	}
 }
+
+// A signal named by several error entries keeps every message, and the
+// round trip keeps the verdict's message and recommended action.
+func TestRoundTripKeepsEveryErrorOnASignal(t *testing.T) {
+	for name, errs := range map[string][]error{
+		"timeout and failure": {
+			fmt.Errorf("first read: %w", health.ErrCollectionTimeout),
+			errors.New("second read failed"),
+		},
+		"two timeouts": {
+			fmt.Errorf("first read: %w", health.ErrCollectionTimeout),
+			fmt.Errorf("second read: %w", health.ErrCollectionTimeout),
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			m := gpu.GPUMeasurement{GPUID: "GPU-0", PowerLimitW: 700, EnforcedPowerLimitW: 700}
+			for _, err := range errs {
+				m.AddError(err, gpu.SignalGPUPstate)
+			}
+
+			observations, err := FromMeasurements("gpu", testNode, time.Unix(1, 0), m)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, o := range observations {
+				if o.GetSignalId() != "gpu.gpu_pstate" {
+					continue
+				}
+				failure := o.GetCollectionError()
+				if want := errs[0].Error() + "; " + errs[1].Error(); failure.GetDetail() != want {
+					t.Fatalf("detail = %q, want %q", failure.GetDetail(), want)
+				}
+				wantTimeout := errors.Is(errs[1], health.ErrCollectionTimeout)
+				if got := failure.GetCategory() == observation.CollectionErrorCategoryTimeout; got != wantTimeout {
+					t.Fatalf("category = %v, want timeout=%t", failure.GetCategory(), wantTimeout)
+				}
+			}
+
+			restored := ToMeasurements(observations)
+			original := []health.Measurement{m}
+			if got, want := verdictSummary(t, "H100", health.OperatorInfra, restored), verdictSummary(t, "H100", health.OperatorInfra, original); !slices.Equal(got, want) {
+				t.Fatalf("verdicts differ:\n got  %v\n want %v", got, want)
+			}
+		})
+	}
+}

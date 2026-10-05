@@ -60,12 +60,12 @@ func export(source, nodeID string, at *timestamppb.Timestamp, m health.Measureme
 		return nil, fmt.Errorf("measurement %T is not a struct", m)
 	}
 
-	failures := make(map[string]error)
+	// A signal may be named by several error entries; each is kept, in entry
+	// order, since the catalog reports every one that matches a check.
+	failures := make(map[string][]error)
 	for _, entry := range m.Errors() {
 		for _, signal := range entry.FailedSignals() {
-			if _, seen := failures[signal]; !seen {
-				failures[signal] = entry.Err()
-			}
+			failures[signal] = append(failures[signal], entry.Err())
 		}
 	}
 	unsupported := make(map[string]bool)
@@ -84,9 +84,9 @@ func export(source, nodeID string, at *timestamppb.Timestamp, m health.Measureme
 			continue
 		}
 		signalID := prefix + field
-		if err := failures[field]; err != nil {
+		if errs := failures[field]; len(errs) > 0 {
 			out = append(out, observation.NewCollectionErrorObservation(
-				signalID, nil, source, exportOperation, target, at, collectionError(err)))
+				signalID, nil, source, exportOperation, target, at, collectionError(errs)))
 			continue
 		}
 		if unsupported[field] {
@@ -112,12 +112,12 @@ func export(source, nodeID string, at *timestamppb.Timestamp, m health.Measureme
 // measurementTarget returns the GPU a measurement describes, or the node for
 // a host-wide measurement. A failed GPU identity lookup leaves gpu_id as a
 // placeholder rather than a UUID, so that measurement carries no target.
-func measurementTarget(v reflect.Value, nodeID string, failures map[string]error) *observation.ObservationTarget {
+func measurementTarget(v reflect.Value, nodeID string, failures map[string][]error) *observation.ObservationTarget {
 	for i := range v.NumField() {
 		if name, ok := signalName(v.Type().Field(i)); !ok || name != gpuIDField || v.Field(i).Kind() != reflect.String {
 			continue
 		}
-		if gpuID := v.Field(i).String(); gpuID != "" && failures[gpuIDField] == nil {
+		if gpuID := v.Field(i).String(); gpuID != "" && len(failures[gpuIDField]) == 0 {
 			return observation.GPUTarget(gpuID)
 		}
 		return nil
@@ -182,12 +182,20 @@ func encodeJSON(v reflect.Value) (string, error) {
 	return string(encoded), nil
 }
 
-func collectionError(err error) *observation.CollectionError {
-	category := observation.CollectionErrorCategorySourceError
-	if errors.Is(err, health.ErrCollectionTimeout) {
-		category = observation.CollectionErrorCategoryTimeout
+// collectionError folds a signal's errors into one CollectionError. The
+// messages are joined as the catalog joins them in a verdict, and the
+// failure is a timeout only if every error was one, since evaluation ranks
+// any other failure above a timeout.
+func collectionError(errs []error) *observation.CollectionError {
+	category := observation.CollectionErrorCategoryTimeout
+	messages := make([]string, 0, len(errs))
+	for _, err := range errs {
+		if !errors.Is(err, health.ErrCollectionTimeout) {
+			category = observation.CollectionErrorCategorySourceError
+		}
+		messages = append(messages, err.Error())
 	}
-	return &observation.CollectionError{Category: category, Detail: err.Error()}
+	return &observation.CollectionError{Category: category, Detail: strings.Join(messages, "; ")}
 }
 
 func doubleValue(v float64) *observation.Value {
