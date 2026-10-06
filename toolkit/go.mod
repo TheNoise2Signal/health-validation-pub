@@ -5,7 +5,7 @@ go 1.27.0
 require (
 	github.com/NVIDIA/go-nvml v0.13.4-0
 	github.com/dsx-ai-factory/health-validation/catalog v0.3.0
-	github.com/dsx-ai-factory/health-validation/collect v0.0.0-00010101000000-000000000000
+	github.com/dsx-ai-factory/health-validation/collect v0.3.0
 	go.opentelemetry.io/otel v1.46.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.46.0
 	go.opentelemetry.io/otel/metric v1.46.0
@@ -43,15 +43,14 @@ require (
 	honnef.co/go/tools v0.8.1 // indirect
 )
 
-// catalog is developed in this same repo. The replace resolves it from the
-// sibling directory for in-repo builds — local dev and the per-module
-// `go mod tidy` CI gate (which runs without the go.work workspace and otherwise
-// could not fetch an in-repo module without git credentials). Consumers of a
-// published toolkit ignore this replace (replace directives apply only in the
-// main module), so they resolve catalog from the require version above — keep
-// that version in lockstep with the catalog tag you intend to ship against.
+// catalog and collect are developed in this same repo. The replaces resolve
+// them from the sibling directories for in-repo builds — local dev and the
+// per-module `go mod tidy` CI gate (which runs without the go.work workspace
+// and otherwise could not fetch an in-repo module without git credentials).
+// Consumers of a published toolkit ignore these replaces (replace directives
+// apply only in the main module), so they resolve catalog and collect from the
+// require versions above — keep each in lockstep with the tag you intend to
+// ship against.
 replace github.com/dsx-ai-factory/health-validation/catalog => ../catalog
 
-// collect is unpublished; the observation contract is resolved from the
-// local tree until collect is tagged.
 replace github.com/dsx-ai-factory/health-validation/collect => ../collect

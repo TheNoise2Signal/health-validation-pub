@@ -13,7 +13,7 @@ replace github.com/dsx-ai-factory/health-validation/toolkit => ../toolkit
 
 require (
 	github.com/dsx-ai-factory/health-validation/catalog v0.3.0
-	github.com/dsx-ai-factory/health-validation/collect v0.0.0-00010101000000-000000000000
+	github.com/dsx-ai-factory/health-validation/collect v0.3.0
 	github.com/dsx-ai-factory/health-validation/toolkit v0.0.0-00010101000000-000000000000
 	github.com/google/uuid v1.6.0
 	github.com/soheilhy/cmux v0.1.5
