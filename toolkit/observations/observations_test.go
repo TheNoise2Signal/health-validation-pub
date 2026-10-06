@@ -344,3 +344,36 @@ func noValueObservation(signalID string, reason observation.NoValueReason) *obse
 	o.Outcome = &observation.Observation_NoValue{NoValue: &observation.NoValue{Reason: reason}}
 	return o
 }
+
+func TestCanonicalSignalsFor(t *testing.T) {
+	gpuIDs := []string{
+		gpusignals.PowerDraw.ID(),
+		gpusignals.PowerLimitRequested.ID(),
+		gpusignals.PowerLimitEnforced.ID(),
+		gpusignals.PerformanceState.ID(),
+		gpusignals.HardwareSlowdownActive.ID(),
+		gpusignals.HardwareThermalSlowdownActive.ID(),
+		gpusignals.HardwarePowerBrakeSlowdownActive.ID(),
+	}
+	nvlinkIDs := []string{
+		gpusignals.NVLinkFabricBandwidthDegraded.ID(),
+		gpusignals.NVLinkFabricRouteRecoveryActive.ID(),
+		gpusignals.NVLinkFabricRouteUnhealthy.ID(),
+		gpusignals.NVLinkFabricAccessTimeoutRecovery.ID(),
+		gpusignals.FabricManagerStatus.ID(),
+	}
+	if got := CanonicalSignalsFor(health.GPU); !slices.Equal(got, gpuIDs) {
+		t.Fatalf("GPU signals = %v, want %v", got, gpuIDs)
+	}
+	if got := CanonicalSignalsFor(health.NVLink); !slices.Equal(got, nvlinkIDs) {
+		t.Fatalf("NVLink signals = %v, want %v", got, nvlinkIDs)
+	}
+	if got := CanonicalSignalsFor(health.CPU); len(got) != 0 {
+		t.Fatalf("CPU signals = %v, want none until a canonical signal feeds it", got)
+	}
+	// Every mapped signal belongs to exactly one domain.
+	perDomain := append(CanonicalSignalsFor(health.GPU), CanonicalSignalsFor(health.NVLink)...)
+	if !slices.Equal(perDomain, CanonicalSignals()) {
+		t.Fatalf("per-domain signals %v do not partition %v", perDomain, CanonicalSignals())
+	}
+}

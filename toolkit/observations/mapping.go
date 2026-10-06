@@ -93,6 +93,20 @@ func CanonicalSignals() []string {
 	return ids
 }
 
+// CanonicalSignalsFor returns the canonical collect signal IDs that feed
+// the catalog's measurement for category, in mapping order, so a domain's
+// collect adapter requests what this table maps rather than its own copy.
+// It is empty for a category no canonical signal feeds yet.
+func CanonicalSignalsFor(category health.Category) []string {
+	var ids []string
+	for _, mapped := range canonicalMappings {
+		if mapped.measurement.Category() == category {
+			ids = append(ids, mapped.signal.ID())
+		}
+	}
+	return ids
+}
+
 // applyFabricManagerStatus maps the raw Fabric Manager status onto the two
 // registration signals the NVLink fabric check reads. A source-level
 // unsupported result arrives as a NoValue and never reaches here.
