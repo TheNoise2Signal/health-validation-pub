@@ -26,9 +26,9 @@ type criticalXid struct {
 }
 
 var (
-	allArchitectures             = []string{"GB200", "GB300", "H100", "H200", "A100"}
-	blackwellArchitectures       = []string{"GB200", "GB300"}
-	hopperBlackwellArchitectures = []string{"GB200", "GB300", "H100", "H200"}
+	allArchitectures             = []string{"GB200", "GB300", "B200", "H100", "H200", "A100"}
+	blackwellArchitectures       = []string{"GB200", "GB300", "B200"}
+	hopperBlackwellArchitectures = []string{"GB200", "GB300", "B200", "H100", "H200"}
 	ampereHopperArchitectures    = []string{"H100", "H200", "A100"}
 	hopperArchitectures          = []string{"H100", "H200"}
 )
