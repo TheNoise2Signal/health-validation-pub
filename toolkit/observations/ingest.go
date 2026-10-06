@@ -23,7 +23,9 @@ import (
 var errNoObservation = errors.New("no observation was collected for these signals")
 
 // ToMeasurements rebuilds the catalog's measurements from observations, one
-// per measurement type and GPU (or node, for host-wide types).
+// per measurement type and GPU (or node, for host-wide types). A GPU is
+// identified by UUID; one reported only by a source-local slot is
+// "<source>:<slot>", so slots from different sources stay distinct.
 //
 // An observation is read as one of two shapes:
 //   - <domain>.<field>, as written by [FromMeasurements], sets that field
@@ -249,15 +251,20 @@ func targetID(s *schema, current *observation.Observation) (string, error) {
 	default:
 		return "", fmt.Errorf("signal %q does not identify a GPU target", current.GetSignalId())
 	}
-	// A source-local ID keeps a failed UUID lookup attributable to one GPU.
-	id := ref.GetUuid()
-	if id == "" {
-		id = ref.GetSourceLocalId()
+	if uuid := ref.GetUuid(); uuid != "" {
+		return uuid, nil
 	}
-	if id == "" {
+	// A source-local slot keeps a failed UUID lookup attributable to one GPU,
+	// but only within the source that numbered it: two sources' slot 0 are
+	// not known to be the same GPU, so the slot is qualified by its source.
+	slot := ref.GetSourceLocalId()
+	switch {
+	case slot == "":
 		return "", fmt.Errorf("signal %q has no GPU identifier", current.GetSignalId())
+	case current.GetSource() == "":
+		return "", fmt.Errorf("signal %q has source-local GPU %q but no source", current.GetSignalId(), slot)
 	}
-	return id, nil
+	return current.GetSource() + ":" + slot, nil
 }
 
 func (b *builder) entity(s *schema, id string) *entity {

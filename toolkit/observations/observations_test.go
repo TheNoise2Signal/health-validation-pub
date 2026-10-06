@@ -108,8 +108,46 @@ func TestToMeasurementsGroupsBySourceLocalID(t *testing.T) {
 		o.Target = observation.GPUSourceLocalTarget("3")
 	}
 
-	if m := only[gpu.GPUMeasurement](t, ToMeasurements(observations)); m.GPUID != "3" || len(mappedErrors(m)) != 0 {
+	if m := only[gpu.GPUMeasurement](t, ToMeasurements(observations)); m.GPUID != "dcgm:3" || len(mappedErrors(m)) != 0 {
 		t.Fatalf("unexpected measurement %+v, errors %v", m, m.Errors())
+	}
+}
+
+// The same slot from two sources is not known to be the same GPU, so each
+// source's slot becomes its own measurement rather than one merged GPU.
+func TestToMeasurementsKeepsSourceLocalSlotsPerSource(t *testing.T) {
+	var observations []*observation.Observation
+	for _, source := range []string{"dcgm", "nvml"} {
+		for _, o := range healthyGPUObservations() {
+			o.Source = source
+			o.Target = observation.GPUSourceLocalTarget("0")
+			observations = append(observations, o)
+		}
+	}
+
+	var ids []string
+	for _, m := range ToMeasurements(observations) {
+		g := m.(gpu.GPUMeasurement)
+		if errs := mappedErrors(g); len(errs) != 0 {
+			t.Fatalf("%s: unexpected errors %v", g.GPUID, errs)
+		}
+		ids = append(ids, g.GPUID)
+	}
+	if !slices.Equal(ids, []string{"dcgm:0", "nvml:0"}) {
+		t.Fatalf("GPU IDs = %v, want one per source", ids)
+	}
+}
+
+func TestToMeasurementsFailsSourceLocalSlotWithoutSource(t *testing.T) {
+	observations := healthyGPUObservations()
+	for _, o := range observations {
+		o.Source = ""
+		o.Target = observation.GPUSourceLocalTarget("0")
+	}
+
+	m := only[gpu.GPUMeasurement](t, ToMeasurements(observations))
+	if !slices.Contains(failedSignals(m), gpu.SignalGPUID) || !slices.Contains(failedSignals(m), gpu.SignalGPUPstate) {
+		t.Fatalf("failed signals = %v, want the GPU identity and every observed signal", failedSignals(m))
 	}
 }
 
