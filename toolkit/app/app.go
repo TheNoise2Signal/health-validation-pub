@@ -405,11 +405,11 @@ func (a *App) runCommand(args []string, stdout, stderr io.Writer) int {
 	// Discover the driver version once for the whole run and hand it to
 	// the catalog alongside the architecture: both are facts about the
 	// node, not about any one measurement. Unlike architecture this is not
-	// fatal: the only consequence of an unknown version is that
-	// version-gated decoding narrows, so log it and continue.
+	// fatal: whatever depends on the version treats it as unknown, so log
+	// it and continue.
 	driverVersion, ok := a.host.driverVersion()
 	if !ok {
-		slog.Warn("driver version undetectable; version-gated decoding will be skipped")
+		slog.Warn("driver version undetectable; continuing without it")
 	}
 
 	cat, timeout, err := buildCatalog(cfg, a.customChecks, health.Host{Architecture: arch, DriverVersion: driverVersion}, executionContext)

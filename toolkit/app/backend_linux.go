@@ -42,21 +42,8 @@ func (h *nvmlHost) nodeBackend() toolkit.NodeBackend     { return h.lazy }
 func (h *nvmlHost) nvlinkBackend() toolkit.NVLinkBackend { return h.lazy }
 func (h *nvmlHost) architecture() (string, error)        { return h.b.Architecture() }
 
-// driverVersion prefers /proc/driver/nvidia/version and falls back to
-// NVML. The proc read comes first because it needs no NVML handle: the
-// Xid sensor, the main consumer, is built to keep running when NVML is
-// missing or wedged, and reading the version through NVML would tie it
-// to exactly the failure it survives. NVML covers the container that
-// gets the library and device nodes without the driver's proc tree.
 func (h *nvmlHost) driverVersion() (health.DriverVersion, bool) {
-	if v, ok := toolkit.DetectDriverVersion(); ok {
-		return v, true
-	}
-	raw, err := h.b.DriverVersion()
-	if err != nil {
-		return health.DriverVersion{}, false
-	}
-	return health.ParseDriverVersion(raw)
+	return discoverDriverVersion(toolkit.DetectDriverVersion, h.b.DriverVersion)
 }
 func (h *nvmlHost) close() error { return h.lazy.Close() }
 

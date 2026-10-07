@@ -28,12 +28,8 @@ var nvidiaVersionFile = "/proc/driver/nvidia/version"
 // as older than every real driver and silently disables anything gated
 // on a minimum.
 //
-// Deliberately a proc read rather than NVML or nvidia-smi: it needs no
-// subprocess, timeout, or PATH entry, and it works when NVML is absent
-// or wedged. That matters because the Xid sensor is built to keep
-// running when the GPU-side sensors have been degraded by exactly that
-// (see toolkit/app's host backend), and it is the consumer that needs
-// the version most.
+// A proc read needs no library, subprocess, timeout, or PATH entry, so it
+// works wherever the driver is loaded, whatever state NVML is in.
 func DetectDriverVersion() (health.DriverVersion, bool) {
 	data, err := os.ReadFile(nvidiaVersionFile)
 	if err != nil {
