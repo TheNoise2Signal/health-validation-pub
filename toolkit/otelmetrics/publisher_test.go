@@ -15,6 +15,8 @@ import (
 	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/dsx-ai-factory/health-validation/catalog"
+	"github.com/dsx-ai-factory/health-validation/catalog/gpu"
 	"github.com/dsx-ai-factory/health-validation/catalog/health"
 	"github.com/dsx-ai-factory/health-validation/toolkit/otelmetrics"
 )
@@ -338,9 +340,10 @@ func TestPublishRecordsDomainSeverityAsLabel(t *testing.T) {
 	}
 }
 
-// TestPublishReportsSkipsAndEntities covers the two instruments that are
-// conditional: skipped checks are reported separately from executed ones, and
-// affected_entities is emitted only for a check that named entities.
+// TestPublishReportsSkipsAndEntities covers the per-check instruments:
+// skipped checks are reported separately from executed ones, and
+// affected_entities reports a count for every check that ran — including the
+// zero that contradicts a previous run's non-zero count.
 func TestPublishReportsSkipsAndEntities(t *testing.T) {
 	srv, cap := newCollector(t, http.StatusOK)
 
@@ -361,13 +364,29 @@ func TestPublishReportsSkipsAndEntities(t *testing.T) {
 		t.Errorf("skipped value = %d, want 1", got)
 	}
 
-	entities := metrics["health_validation.check.affected_entities"].GetGauge().GetDataPoints()
-	if len(entities) != 1 {
-		t.Fatalf("affected_entities points = %d, want 1 (only the failing check)", len(entities))
+	// One point per check that ran: 2 for the failing check, and an explicit
+	// 0 for the passing one. The skipped check is absent — it named nothing
+	// because it never ran, which is what check.skipped reports.
+	entities := byCheckID(t, metrics["health_validation.check.affected_entities"].GetGauge().GetDataPoints())
+	if len(entities) != 2 {
+		t.Fatalf("affected_entities points = %d, want 2 (one per executed check)", len(entities))
 	}
-	if got := entities[0].GetAsInt(); got != 2 {
-		t.Errorf("affected_entities = %d, want 2", got)
+	if got := entities["gpu_ecc_errors"]; got != 2 {
+		t.Errorf("gpu_ecc_errors affected_entities = %d, want 2", got)
 	}
+	if got, ok := entities["gpu_count"]; !ok || got != 0 {
+		t.Errorf("gpu_count affected_entities = %d (present=%v), want an explicit 0", got, ok)
+	}
+}
+
+// byCheckID indexes gauge points by their check_id attribute.
+func byCheckID(t *testing.T, points []*metricspb.NumberDataPoint) map[string]int64 {
+	t.Helper()
+	out := make(map[string]int64, len(points))
+	for _, pt := range points {
+		out[attrs(pt.GetAttributes())["check_id"]] = pt.GetAsInt()
+	}
+	return out
 }
 
 // TestRunsCounterUsesDeltaTemporality guards the one-shot contract: a fresh
@@ -583,8 +602,60 @@ func TestPerEntityResultsDoNotOverwrite(t *testing.T) {
 			"survive the three passing ones recorded around it", got)
 	}
 
+	// Four per-GPU verdicts fold into one check, so one point — counting the
+	// single GPU that failed.
 	entities := cap.metricsByName(t)["health_validation.check.affected_entities"].GetGauge().GetDataPoints()
 	if len(entities) != 1 || entities[0].GetAsInt() != 1 {
 		t.Errorf("affected_entities = %v, want a single point of 1", entities)
+	}
+}
+
+// TestAffectedEntitiesFromRealEvaluation closes the gap that let this metric
+// ship unpublishable: every other test here hand-builds verdicts, so they
+// passed while the evaluation engine never populated AffectedEntities and the
+// real binary emitted five metrics instead of six. This one drives a catalog
+// evaluation end to end.
+func TestAffectedEntitiesFromRealEvaluation(t *testing.T) {
+	cat := catalog.NewEmpty(
+		catalog.WithArchitecture("GB200"),
+		catalog.WithExecutionContext(health.OperatorInfra),
+	)
+	cat.MustRegister(health.CheckDefinition{
+		ID:                "gpu_pstate_probe",
+		Category:          health.GPU,
+		RequiredSignals:   []string{gpu.SignalGPUID, gpu.SignalGPUPstate},
+		ExecutionContexts: []health.ExecutionContext{health.OperatorInfra},
+		Thresholds:        map[string]health.ThresholdSpec{},
+		Rules: []health.Rule{{
+			Expression: "gpu_pstate != 0", Severity: health.Critical, Message: "wrong pstate",
+		}},
+	})
+
+	nv, err := cat.EvaluateAll(
+		gpu.GPUMeasurement{GPUID: "GPU-0", GPUPstate: 0},
+		gpu.GPUMeasurement{GPUID: "GPU-1", GPUPstate: 8},
+	)
+	if err != nil {
+		t.Fatalf("EvaluateAll: %v", err)
+	}
+
+	srv, cap := newCollector(t, http.StatusOK)
+	ctx := context.Background()
+	p, err := otelmetrics.New(ctx, otelmetrics.Options{Endpoint: srv.URL, Timeout: 5 * time.Second})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer func() { _ = p.Shutdown(ctx) }()
+	if err := p.Publish(ctx, nv); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+
+	m := cap.metricsByName(t)["health_validation.check.affected_entities"]
+	if m == nil {
+		t.Fatal("affected_entities was not published for a verdict with a failing GPU")
+	}
+	points := m.GetGauge().GetDataPoints()
+	if len(points) != 1 || points[0].GetAsInt() != 1 {
+		t.Errorf("affected_entities = %v, want a single point of 1", points)
 	}
 }
