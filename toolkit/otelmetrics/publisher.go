@@ -43,6 +43,14 @@ var severities = []health.Severity{
 	health.Pass, health.Info, health.Warning, health.Critical, health.Unknown,
 }
 
+// skipReasons is reported in full on the skip gauge for the same reason.
+// NotSkipped is absent: a check that ran is already every reason at 0.
+var skipReasons = []health.SkipReason{
+	health.ArchitectureUnsupported, health.DeploymentUnsupported, health.CheckDisabled,
+	health.DependencySkipped, health.InsufficientHistory, health.ThresholdUnconfigured,
+	health.NoApplicableMeasurement, health.SensorMissing, health.CadenceMismatch,
+}
+
 // Spelled out rather than imported from otel/semconv: the keys are stable, and
 // the versioned package would pin the Bazel label to semconv/v1.37.0, a moving
 // target on every OTel bump.
@@ -202,7 +210,7 @@ func (p *Publisher) newInstruments(m metric.Meter) error {
 	p.checkSeverity = gauge("health_validation.check.severity",
 		"1 for the severity a check reported, 0 for every other severity.")
 	p.checkSkipped = gauge("health_validation.check.skipped",
-		"Always 1, emitted once per check that did not execute, labelled with the skip reason.")
+		"1 when a check was skipped for this reason, 0 when it was not. A check that ran reports 0 for every reason.")
 	p.affectedEntities = gauge("health_validation.check.affected_entities",
 		"Number of entities (GPUs, links, devices) a check named as affected.")
 	p.runs = runs
@@ -238,12 +246,18 @@ func (p *Publisher) record(ctx context.Context, nv health.NodeVerdict) {
 			attribute.String("category", category.String()))
 	}
 
-	for _, cv := range nv.SkippedChecks {
-		p.checkSkipped.Record(ctx, 1, metric.WithAttributes(
-			attribute.String("check_id", cv.CheckID),
-			attribute.String("category", cv.Category.String()),
-			attribute.String("skip_reason", cv.SkipReason.String()),
-		))
+	for _, s := range aggregateSkips(nv) {
+		for _, reason := range skipReasons {
+			var value int64
+			if _, ok := s.reasons[reason]; ok {
+				value = 1
+			}
+			p.checkSkipped.Record(ctx, value, metric.WithAttributes(
+				attribute.String("check_id", s.checkID),
+				attribute.String("category", s.category.String()),
+				attribute.String("skip_reason", reason.String()),
+			))
+		}
 	}
 
 	for _, r := range aggregateByCheck(nv.CheckResults) {
@@ -263,6 +277,54 @@ func (p *Publisher) record(ctx context.Context, nv health.NodeVerdict) {
 		// staleness window expires it.
 		p.affectedEntities.Record(ctx, int64(len(r.entities)), metric.WithAttributes(id...))
 	}
+}
+
+// skipSummary is every skip reason one check reported across the verdicts it
+// produced, plus NotSkipped if any of them ran.
+type skipSummary struct {
+	reasons  map[health.SkipReason]struct{}
+	checkID  string
+	category health.Category
+}
+
+// aggregateSkips folds a run's executed and skipped verdicts into one entry
+// per check, in first-seen order. Executed checks are included so their
+// skip-reason series are driven back to 0 — without that, a check skipped on
+// one run would sit at 1 forever once it started running again. A check can
+// appear in both lists, so the reasons are collected as a set.
+func aggregateSkips(nv health.NodeVerdict) []skipSummary {
+	total := len(nv.CheckResults) + len(nv.SkippedChecks)
+	byID := make(map[string]*skipSummary, total)
+	order := make([]string, 0, total)
+
+	seen := func(cv health.CheckVerdict) *skipSummary {
+		s, ok := byID[cv.CheckID]
+		if !ok {
+			s = &skipSummary{
+				reasons:  map[health.SkipReason]struct{}{},
+				checkID:  cv.CheckID,
+				category: cv.Category,
+			}
+			byID[cv.CheckID] = s
+			order = append(order, cv.CheckID)
+		}
+		return s
+	}
+
+	// Executed checks contribute no reason; they are here only so their
+	// series are driven to 0.
+	for _, cv := range nv.CheckResults {
+		seen(cv)
+	}
+	for _, cv := range nv.SkippedChecks {
+		seen(cv).reasons[cv.SkipReason] = struct{}{}
+	}
+
+	out := make([]skipSummary, 0, len(order))
+	for _, id := range order {
+		out = append(out, *byID[id])
+	}
+	return out
 }
 
 // checkResult is one check's outcome across every entity it ran against.
