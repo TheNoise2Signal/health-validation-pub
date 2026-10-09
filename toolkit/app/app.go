@@ -408,7 +408,7 @@ func (a *App) runCommand(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "%s: select runnable checks: %v\n", a.prog, err)
 		return exitError
 	}
-	sensors, err := a.sensors(timeout, requiredFor(runnable))
+	sensors, err := a.sensors(timeout, requiredFor(cat, runnable))
 	if err != nil {
 		fmt.Fprintf(stderr, "%s: register collect sensors: %v\n", a.prog, err)
 		return exitError
