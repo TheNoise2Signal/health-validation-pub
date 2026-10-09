@@ -1,0 +1,74 @@
+name: Dependabot regenerate
+
+# Dependabot only edits go.mod/go.sum. A Go bump also needs BUILD files, tidy
+# results, SHIPPED_MODULES.txt and NOTICE regenerated, so this job runs those
+# and pushes the result onto the Dependabot branch.
+#
+# Runs on pull_request, not pull_request_target: the checkout is the PR's own
+# code, and the actor gate below keeps it to Dependabot-authored branches. It
+# uses a GitHub-hosted runner because the self-hosted runners are deliberately
+# not triggered by pull_request events (see ci.yml).
+#
+# Pushing with the default GITHUB_TOKEN would not retrigger CI and the token is
+# read-only on Dependabot PRs, so the push uses DEPENDABOT_PUSH_TOKEN, stored
+# under Settings > Secrets and variables > Dependabot. The commit it pushes has
+# a different actor, so this workflow does not re-run on it.
+on:
+  pull_request:
+    paths:
+      - "**/go.mod"
+      - "**/go.sum"
+      - "go.work"
+      - "go.work.sum"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  regenerate:
+    if: >-
+      github.repository == 'dsx-ai-factory/health-validation' &&
+      github.actor == 'dependabot[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          token: ${{ secrets.DEPENDABOT_PUSH_TOKEN }}
+
+      - name: Set up Bazel
+        uses: ./.github/actions/setup-bazel
+
+      - name: Regenerate BUILD files
+        run: bazel run //tools/gazelle
+
+      - name: Go mod tidy
+        run: |
+          for module in agentkit catalog collect toolkit; do
+            (cd "$module" && bazel run //tools/go -- mod tidy)
+          done
+
+      - name: Regenerate shipped modules and NOTICE
+        run: |
+          bazel run //toolkit/cmd/health-validation:shipped_modules_update
+          bazel run //tools:check_notice -- --write
+
+      - name: Commit and push
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          if git diff --quiet && [[ -z "$(git ls-files --others --exclude-standard)" ]]; then
+            echo "nothing to regenerate"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "chore(deps): regenerate BUILD files, SHIPPED_MODULES and NOTICE"
+          git push origin "HEAD:${HEAD_REF}"
