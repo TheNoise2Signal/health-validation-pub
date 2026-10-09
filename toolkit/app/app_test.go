@@ -285,6 +285,7 @@ func (h fakeHost) gpuBackend() toolkit.GPUBackend       { return h.b }
 func (h fakeHost) nodeBackend() toolkit.NodeBackend     { return h.b }
 func (h fakeHost) nvlinkBackend() toolkit.NVLinkBackend { return h.b }
 func (fakeHost) architecture() (string, error)          { return "GB200", nil }
+func (fakeHost) nvmlDriverVersion() (string, error)     { return "575.51.03", nil }
 func (fakeHost) close() error                           { return nil }
 
 // panicHost ensures invalid input returns before touching the host backend.
@@ -294,7 +295,10 @@ func (panicHost) gpuBackend() toolkit.GPUBackend       { panic("unexpected GPU b
 func (panicHost) nodeBackend() toolkit.NodeBackend     { panic("unexpected node backend access") }
 func (panicHost) nvlinkBackend() toolkit.NVLinkBackend { panic("unexpected NVLink backend access") }
 func (panicHost) architecture() (string, error)        { panic("unexpected architecture discovery") }
-func (panicHost) close() error                         { panic("unexpected host backend close") }
+func (panicHost) nvmlDriverVersion() (string, error) {
+	panic("unexpected driver version discovery")
+}
+func (panicHost) close() error { panic("unexpected host backend close") }
 
 func TestRunCommandRejectsInvalidNodeID(t *testing.T) {
 	tests := []struct {
@@ -824,7 +828,10 @@ func (h erroringHost) gpuBackend() toolkit.GPUBackend       { return h.b }
 func (h erroringHost) nodeBackend() toolkit.NodeBackend     { return h.b }
 func (h erroringHost) nvlinkBackend() toolkit.NVLinkBackend { return h.b }
 func (erroringHost) architecture() (string, error)          { return "", errors.New("no GPUs enumerated") }
-func (erroringHost) close() error                           { return nil }
+func (erroringHost) nvmlDriverVersion() (string, error) {
+	panic("driver version read after discovery failed")
+}
+func (erroringHost) close() error { return nil }
 
 // TestRunCommandArchDiscoveryFailureDrains confirms an architecture-discovery
 // error yields a Critical verdict and does NOT collect: a healthy node is not

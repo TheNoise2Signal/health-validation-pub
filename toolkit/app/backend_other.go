@@ -31,6 +31,12 @@ func (stubHost) nvlinkBackend() toolkit.NVLinkBackend { return unavailableBacken
 func (stubHost) architecture() (string, error) { return "", nil }
 func (stubHost) close() error                  { return nil }
 
+// nvmlDriverVersion has no NVML to ask off-linux; the sensor reports the
+// version unreadable.
+func (stubHost) nvmlDriverVersion() (string, error) {
+	return "", fmt.Errorf("NVML is only available on linux (current platform: %s)", runtime.GOOS)
+}
+
 // unavailableBackend implements every per-domain backend interface on a
 // platform with no NVML support; every measure method returns a clear error so
 // `run` fails loudly rather than silently producing an empty verdict.

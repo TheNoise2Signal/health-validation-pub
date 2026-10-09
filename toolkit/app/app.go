@@ -19,7 +19,7 @@
 //		os.Exit(a.Run(os.Args[1:], os.Stdout, os.Stderr))
 //	}
 //
-// Each of the six sensors (GPU, node, NVLink, CPU, Xid, InfiniBand) draws from
+// Each sensor (GPU, node, NVLink, CPU, Xid, InfiniBand) draws from
 // its own per-domain backend, defaulting to the shared host NVML backend for
 // GPU/node/NVLink, sysfs for CPU and InfiniBand, and the journal (through the
 // collect sensor) for Xid. A
@@ -90,12 +90,16 @@ type hostBackend interface {
 	nodeBackend() toolkit.NodeBackend
 	nvlinkBackend() toolkit.NVLinkBackend
 	architecture() (string, error)
+	// nvmlDriverVersion is the driver version as NVML reports it, the
+	// driver-version sensor's fallback when /proc has none.
+	nvmlDriverVersion() (string, error)
 	close() error
 }
 
 // App is the health-validation CLI, assembled with the builder methods and
-// run with [App.Run]. It wires six sensors (GPU, node, NVLink, CPU, Xid,
-// InfiniBand), each from its own per-domain backend — the shared host NVML
+// run with [App.Run]. It wires sensors for GPU, node, NVLink, CPU, Xid,
+// RDMA link flaps, the driver version, and optionally InfiniBand, each from
+// its own per-domain backend — the shared host NVML
 // backend, sysfs, or the journal by default, or a caller-supplied override.
 type App struct {
 	host     hostBackend
@@ -445,6 +449,7 @@ func (a *App) sensors(timeout time.Duration, required requiredSignals) ([]toolki
 		toolkit.NewGPUSensor(gpu),
 		toolkit.NewNodeSensor(node),
 		toolkit.NewNVLinkSensor(nvlink),
+		toolkit.NewDriverVersionSensor(a.host.nvmlDriverVersion),
 	}
 	// Without an override, the Xid domain comes from builtinCollect.
 	if a.xid != nil {

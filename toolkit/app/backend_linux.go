@@ -40,6 +40,7 @@ func (h *nvmlHost) gpuBackend() toolkit.GPUBackend       { return h.lazy }
 func (h *nvmlHost) nodeBackend() toolkit.NodeBackend     { return h.lazy }
 func (h *nvmlHost) nvlinkBackend() toolkit.NVLinkBackend { return h.lazy }
 func (h *nvmlHost) architecture() (string, error)        { return h.b.Architecture() }
+func (h *nvmlHost) nvmlDriverVersion() (string, error)   { return h.b.DriverVersion() }
 func (h *nvmlHost) close() error                         { return h.lazy.Close() }
 
 // One NVMLBackend backs the GPU, node, and NVLink sensors: it implements each
