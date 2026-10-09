@@ -9,10 +9,9 @@ name: Dependabot regenerate
 # uses a GitHub-hosted runner because the self-hosted runners are deliberately
 # not triggered by pull_request events (see ci.yml).
 #
-# Pushing with the default GITHUB_TOKEN would not retrigger CI and the token is
-# read-only on Dependabot PRs, so the push uses DEPENDABOT_PUSH_TOKEN, stored
-# under Settings > Secrets and variables > Dependabot. The commit it pushes has
-# a different actor, so this workflow does not re-run on it.
+# The GITHUB_TOKEN is read-only on Dependabot PRs unless the job asks for write
+# explicitly, which it does below. A push made with it does not trigger other
+# workflows, so this one cannot re-run on its own commit.
 on:
   pull_request:
     paths:
@@ -36,11 +35,12 @@ jobs:
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.head.ref }}
-          token: ${{ secrets.DEPENDABOT_PUSH_TOKEN }}
 
       - name: Set up Bazel
         uses: ./.github/actions/setup-bazel
