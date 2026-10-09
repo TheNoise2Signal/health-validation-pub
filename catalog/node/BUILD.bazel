@@ -3,6 +3,7 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "node",
     srcs = [
+        "driver_version.go",
         "gpu_count.go",
         "measurement.go",
     ],
@@ -13,7 +14,10 @@ go_library(
 
 go_test(
     name = "node_test",
-    srcs = ["gpu_count_test.go"],
+    srcs = [
+        "driver_version_test.go",
+        "gpu_count_test.go",
+    ],
     deps = [
         ":node",
         "//catalog",
