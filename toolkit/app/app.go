@@ -94,17 +94,18 @@ type hostBackend interface {
 }
 
 // App is the health-validation CLI, assembled with the builder methods and
-// run with [App.Run]. It wires six sensors (GPU, node, NVLink, CPU, Xid,
-// InfiniBand), each from its own per-domain backend — the shared host NVML
+// run with [App.Run]. It wires seven sensors (GPU, node, NVLink, CPU, Xid,
+// InfiniBand, PCIe), each from its own per-domain backend — the shared host NVML
 // backend, sysfs, or the journal by default, or a caller-supplied override.
 type App struct {
 	host     hostBackend
 	hostname func() (string, error)
-	// gpu, node, nvlink, cpu, xid, rdmaLinkFlap, and ib are per-domain backend
+	// gpu, node, nvlink, cpu, xid, rdmaLinkFlap, pcie, and ib are per-domain backend
 	// overrides set by the matching With*Backend setter. A nil override uses the
 	// default: the shared host NVML backend for gpu/node/nvlink, the sysfs
 	// collect sensor for cpu, [toolkit.Journalctl] for xid, and
-	// [toolkit.JournalctlRDMALinkFlap] for rdmaLinkFlap. The generic ib backend
+	// [toolkit.JournalctlRDMALinkFlap] for rdmaLinkFlap, and [toolkit.SysfsPCIe]
+	// for pcie. The generic ib backend
 	// has no default and is opt-in.
 	gpu          toolkit.GPUBackend
 	node         toolkit.NodeBackend
@@ -112,6 +113,7 @@ type App struct {
 	cpu          toolkit.CPUBackend
 	xid          toolkit.XidBackend
 	rdmaLinkFlap toolkit.RDMALinkFlapBackend
+	pcie         toolkit.PCIeBackend
 	ib           toolkit.IBBackend
 	// prog is the program name used in usage and error-message prefixes. It
 	// defaults to filepath.Base(os.Args[0]); see WithProgramName.
@@ -187,6 +189,13 @@ func (a *App) WithNVLinkBackend(b toolkit.NVLinkBackend) *App {
 // [App.WithCollect] instead.
 func (a *App) WithCPUBackend(b toolkit.CPUBackend) *App {
 	a.cpu = b
+	return a
+}
+
+// WithPCIeBackend overrides PCIe collection (default: [toolkit.SysfsPCIe]).
+// The override is caller-owned.
+func (a *App) WithPCIeBackend(b toolkit.PCIeBackend) *App {
+	a.pcie = b
 	return a
 }
 
@@ -442,12 +451,18 @@ func (a *App) sensors(timeout time.Duration, required requiredSignals) ([]toolki
 		rdmaLinkFlap = toolkit.JournalctlRDMALinkFlap()
 	}
 
+	pcie := a.pcie
+	if pcie == nil {
+		pcie = toolkit.SysfsPCIe()
+	}
+
 	sensors := []toolkit.Sensor{
 		toolkit.NewGPUSensor(gpu),
 		toolkit.NewNodeSensor(node),
 		toolkit.NewNVLinkSensor(nvlink),
 		toolkit.NewXidSensor(xid),
 		toolkit.NewRDMALinkFlapSensor(rdmaLinkFlap),
+		toolkit.NewPCIeSensor(pcie),
 	}
 	// The generic InfiniBand sensor is opt-in: the catalog's built-in
 	// InfiniBand check (rdma_linkflap_fatal) is fed by the link-flap sensor
@@ -555,6 +570,7 @@ var categoryBySensor = map[string]health.Category{
 	"infiniband":    health.InfiniBand,
 	"node":          health.Node,
 	"nvlink":        health.NVLink,
+	"pcie":          health.PCIe,
 	"rdma_linkflap": health.InfiniBand,
 	"xid":           health.Xid,
 }
@@ -616,18 +632,20 @@ func (a *App) collectCommand(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "%s: %v\n", a.prog, err)
 		return exitError
 	}
-	batch, err := collectionOutput(uuid.NewString(), resolvedNodeID, toolkit.CollectMeasurementsWithTimeout(timeout, sensors...))
+	collectionID := uuid.NewString()
+	groups := toolkit.CollectMeasurementsWithTimeout(timeout, sensors...)
+	batch, err := collectionOutput(collectionID, resolvedNodeID, groups)
 	if err != nil {
-		fmt.Fprintf(stderr, "%s: prepare observation batch: %v\n", a.prog, err)
+		fmt.Fprintf(stderr, "%s: prepare collection output: %v\n", a.prog, err)
 		return exitError
 	}
 	encoded, err := protojson.MarshalOptions{Multiline: true, Indent: "  "}.Marshal(batch)
 	if err != nil {
-		fmt.Fprintf(stderr, "%s: encode observation batch: %v\n", a.prog, err)
+		fmt.Fprintf(stderr, "%s: prepare collection output: %v\n", a.prog, err)
 		return exitError
 	}
 	if _, err := fmt.Fprintln(stdout, string(encoded)); err != nil {
-		fmt.Fprintf(stderr, "%s: write observation batch: %v\n", a.prog, err)
+		fmt.Fprintf(stderr, "%s: write collection output: %v\n", a.prog, err)
 		return exitError
 	}
 	return exitOK
@@ -691,7 +709,23 @@ func collectionSensors(sensors []toolkit.Sensor, categories map[health.Category]
 func collectionOutput(collectionID, nodeID string, groups []toolkit.SensorMeasurements) (*observation.ObservationBatch, error) {
 	batch := &observation.ObservationBatch{CollectionId: collectionID}
 	for _, group := range groups {
-		exported, err := observations.FromMeasurements(group.Sensor, nodeID, group.CollectedAt, group.Measurements...)
+		inventory, err := toolkit.PCIInventoryFromMeasurements(group.Measurements...)
+		if err != nil {
+			return nil, fmt.Errorf("%s PCI metadata: %w", group.Sensor, err)
+		}
+		targets := make(map[string]*observation.ObservationTarget, len(inventory.Devices))
+		for _, device := range inventory.Devices {
+			bdf, ok := device["bdf"].(string)
+			if !ok || bdf == "" {
+				continue
+			}
+			target, targetErr := observation.PCIeTarget(nodeID, device)
+			if targetErr != nil {
+				return nil, targetErr
+			}
+			targets[bdf] = target
+		}
+		exported, err := observations.FromMeasurementsWithPCITargets(group.Sensor, nodeID, group.CollectedAt, targets, group.Measurements...)
 		if err != nil {
 			return nil, fmt.Errorf("%s sensor: %w", group.Sensor, err)
 		}

@@ -5,11 +5,14 @@ package observation
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	healthv1 "github.com/dsx-ai-factory/health-validation/collect/proto/go/health/v1"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -71,6 +74,7 @@ type (
 	ObservationTarget_FUSEConnection     = healthv1.ObservationTarget_FuseConnection
 	ObservationTarget_PstoreRecord       = healthv1.ObservationTarget_PstoreRecord
 	Value_UintValue                      = healthv1.Value_UintValue
+	ObservationTarget_PCIE               = healthv1.ObservationTarget_Pcie
 )
 
 const (
@@ -174,6 +178,58 @@ func FUSEConnectionTarget(bootID string, connectionID uint64) *ObservationTarget
 // PstoreRecordTarget identifies a persistent record by path and content digest.
 func PstoreRecordTarget(path, sha256 string) *ObservationTarget {
 	return &ObservationTarget{Kind: &ObservationTarget_PstoreRecord{PstoreRecord: &PstoreRecordRef{Path: path, Sha256: sha256}}}
+}
+
+// PCIeTarget identifies a PCI function and carries its available device context.
+func PCIeTarget(nodeID string, properties map[string]any) (*ObservationTarget, error) {
+	// Normalize JSON numbers and typed nested slices before building a Struct.
+	encoded, err := json.Marshal(properties)
+	if err != nil {
+		return nil, fmt.Errorf("encode PCI target: %w", err)
+	}
+	var fields map[string]any
+	if err = json.Unmarshal(encoded, &fields); err != nil {
+		return nil, fmt.Errorf("decode PCI target: %w", err)
+	}
+	fields = pciTargetFields(fields)
+	fields["nodeId"] = nodeID
+	value, err := structpb.NewStruct(fields)
+	if err != nil {
+		return nil, fmt.Errorf("build PCI target: %w", err)
+	}
+	return &ObservationTarget{Kind: &ObservationTarget_PCIE{Pcie: value}}, nil
+}
+
+func pciTargetFields(fields map[string]any) map[string]any {
+	out := make(map[string]any, len(fields))
+	for key, value := range fields {
+		if key == "field_errors" || key == "aer" {
+			continue
+		}
+		width := 0
+		switch key {
+		case "vendor_id", "device_id", "subsystem_vendor_id", "subsystem_device_id":
+			width = 4
+		case "class_code":
+			width = 6
+		case "revision":
+			width = 2
+		}
+		if number, ok := value.(float64); ok && width > 0 {
+			value = fmt.Sprintf("0x%0*x", width, uint64(number))
+		}
+		parts := strings.Split(key, "_")
+		for i := 1; i < len(parts); i++ {
+			if parts[i] != "" {
+				parts[i] = strings.ToUpper(parts[i][:1]) + parts[i][1:]
+			}
+		}
+		if nested, ok := value.(map[string]any); ok {
+			value = pciTargetFields(nested)
+		}
+		out[strings.Join(parts, "")] = value
+	}
+	return out
 }
 
 // ValidateBatch verifies every observation before a batch crosses a service
@@ -365,6 +421,13 @@ func validateTarget(target *ObservationTarget) error {
 			return fmt.Errorf("target has an empty pstore record payload")
 		}
 		return validatePstoreRecordRef(kind.PstoreRecord)
+	case *ObservationTarget_PCIE:
+		if kind == nil || kind.Pcie == nil {
+			return fmt.Errorf("target has an empty PCIe device payload")
+		}
+		if kind.Pcie.GetFields()["bdf"].GetStringValue() == "" {
+			return fmt.Errorf("PCIe target has no BDF")
+		}
 	default:
 		return fmt.Errorf("target has no kind")
 	}

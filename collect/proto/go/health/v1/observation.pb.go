@@ -13,6 +13,7 @@ import (
 
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	structpb "google.golang.org/protobuf/types/known/structpb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -814,6 +815,7 @@ type ObservationTarget struct {
 	//	*ObservationTarget_Pci
 	//	*ObservationTarget_FuseConnection
 	//	*ObservationTarget_PstoreRecord
+	//	*ObservationTarget_Pcie
 	Kind          isObservationTarget_Kind `protobuf_oneof:"kind"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -982,6 +984,15 @@ func (x *ObservationTarget) GetPstoreRecord() *PstoreRecordRef {
 	return nil
 }
 
+func (x *ObservationTarget) GetPcie() *structpb.Struct {
+	if x != nil {
+		if x, ok := x.Kind.(*ObservationTarget_Pcie); ok {
+			return x.Pcie
+		}
+	}
+	return nil
+}
+
 type isObservationTarget_Kind interface {
 	isObservationTarget_Kind()
 }
@@ -1069,6 +1080,12 @@ func (*ObservationTarget_Pci) isObservationTarget_Kind() {}
 func (*ObservationTarget_FuseConnection) isObservationTarget_Kind() {}
 
 func (*ObservationTarget_PstoreRecord) isObservationTarget_Kind() {}
+
+type ObservationTarget_Pcie struct {
+	Pcie *structpb.Struct `protobuf:"bytes,15,opt,name=pcie,proto3,oneof"`
+}
+
+func (*ObservationTarget_Pcie) isObservationTarget_Kind() {}
 
 type NodeRef struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -2070,172 +2087,93 @@ func (x *NoValue) GetSourceStatus() string {
 var File_health_v1_observation_proto protoreflect.FileDescriptor
 
 const file_health_v1_observation_proto_rawDesc = "" +
-	"\n" +
-	"\x1bhealth/v1/observation.proto\x12\thealth.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xaf\x01\n" +
-	"\x10ObservationBatch\x12#\n" +
-	"\rcollection_id\x18\x01 \x01(\tR\fcollectionId\x12:\n" +
-	"\fobservations\x18\x02 \x03(\v2\x16.health.v1.ObservationR\fobservations\x12:\n" +
-	"\tinventory\x18\x03 \x01(\v2\x1c.health.v1.HardwareInventoryR\tinventory\"Y\n" +
-	"\x11HardwareInventory\x12D\n" +
-	"\rgpu_snapshots\x18\x01 \x03(\v2\x1f.health.v1.GpuInventorySnapshotR\fgpuSnapshots\"\xfa\x01\n" +
-	"\x14GpuInventorySnapshot\x12\x16\n" +
-	"\x06source\x18\x01 \x01(\tR\x06source\x12=\n" +
-	"\fcollected_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\vcollectedAt\x127\n" +
-	"\tinventory\x18\x03 \x01(\v2\x17.health.v1.GpuInventoryH\x00R\tinventory\x12G\n" +
-	"\x10collection_error\x18\x04 \x01(\v2\x1a.health.v1.CollectionErrorH\x00R\x0fcollectionErrorB\t\n" +
-	"\aoutcome\"F\n" +
-	"\fGpuInventory\x126\n" +
-	"\aentries\x18\x01 \x03(\v2\x1c.health.v1.GpuInventoryEntryR\aentries\"\xd3\x02\n" +
-	"\x11GpuInventoryEntry\x12!\n" +
-	"\fsource_index\x18\x01 \x01(\rR\vsourceIndex\x12&\n" +
-	"\x03gpu\x18\x02 \x01(\v2\x14.health.v1.GpuDeviceR\x03gpu\x12E\n" +
-	"\x10collection_error\x18\x03 \x01(\v2\x1a.health.v1.CollectionErrorR\x0fcollectionError\x12P\n" +
-	"\ffield_errors\x18\x04 \x03(\v2-.health.v1.GpuInventoryEntry.FieldErrorsEntryR\vfieldErrors\x1aZ\n" +
-	"\x10FieldErrorsEntry\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\tR\x03key\x120\n" +
-	"\x05value\x18\x02 \x01(\v2\x1a.health.v1.CollectionErrorR\x05value:\x028\x01\"\xa8\a\n" +
-	"\tGpuDevice\x12\x17\n" +
-	"\x04uuid\x18\x01 \x01(\tH\x00R\x04uuid\x88\x01\x01\x12\x19\n" +
-	"\x05model\x18\x02 \x01(\tH\x01R\x05model\x88\x01\x01\x12\x1b\n" +
-	"\x06serial\x18\x03 \x01(\tH\x02R\x06serial\x88\x01\x01\x12\x1a\n" +
-	"\x06bus_id\x18\x04 \x01(\tH\x03R\x05busId\x88\x01\x01\x12\x19\n" +
-	"\x05brand\x18\x05 \x01(\tH\x04R\x05brand\x88\x01\x01\x12(\n" +
-	"\rvbios_version\x18\x06 \x01(\tH\x05R\fvbiosVersion\x88\x01\x01\x12*\n" +
-	"\x0echassis_serial\x18\a \x01(\tH\x06R\rchassisSerial\x88\x01\x01\x12&\n" +
-	"\fminor_number\x18\b \x01(\x03H\aR\vminorNumber\x88\x01\x01\x123\n" +
-	"\x13fabric_cluster_uuid\x18\t \x01(\tH\bR\x11fabricClusterUuid\x88\x01\x01\x12-\n" +
-	"\x10fabric_clique_id\x18\n" +
-	" \x01(\rH\tR\x0efabricCliqueId\x88\x01\x01\x12=\n" +
-	"\x18compute_capability_major\x18\v \x01(\rH\n" +
-	"R\x16computeCapabilityMajor\x88\x01\x01\x12=\n" +
-	"\x18compute_capability_minor\x18\f \x01(\rH\vR\x16computeCapabilityMinor\x88\x01\x01\x12;\n" +
-	"\x17framebuffer_total_bytes\x18\r \x01(\x04H\fR\x15framebufferTotalBytes\x88\x01\x01\x12*\n" +
-	"\x0edriver_version\x18\x0e \x01(\tH\rR\rdriverVersion\x88\x01\x01\x123\n" +
-	"\x13cuda_driver_version\x18\x0f \x01(\tH\x0eR\x11cudaDriverVersion\x88\x01\x01B\a\n" +
-	"\x05_uuidB\b\n" +
-	"\x06_modelB\t\n" +
-	"\a_serialB\t\n" +
-	"\a_bus_idB\b\n" +
-	"\x06_brandB\x10\n" +
-	"\x0e_vbios_versionB\x11\n" +
-	"\x0f_chassis_serialB\x0f\n" +
-	"\r_minor_numberB\x16\n" +
-	"\x14_fabric_cluster_uuidB\x13\n" +
-	"\x11_fabric_clique_idB\x1b\n" +
-	"\x19_compute_capability_majorB\x1b\n" +
-	"\x19_compute_capability_minorB\x1a\n" +
-	"\x18_framebuffer_total_bytesB\x11\n" +
-	"\x0f_driver_versionB\x16\n" +
-	"\x14_cuda_driver_version\"\x92\x04\n" +
-	"\vObservation\x12\x1b\n" +
-	"\tsignal_id\x18\x01 \x01(\tR\bsignalId\x12\x16\n" +
-	"\x06source\x18\x02 \x01(\tR\x06source\x124\n" +
-	"\x06target\x18\x03 \x01(\v2\x1c.health.v1.ObservationTargetR\x06target\x12;\n" +
-	"\vobserved_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"observedAt\x12\x17\n" +
-	"\x04unit\x18\x05 \x01(\tH\x01R\x04unit\x88\x01\x01\x12(\n" +
-	"\x05value\x18\x06 \x01(\v2\x10.health.v1.ValueH\x00R\x05value\x12G\n" +
-	"\x10collection_error\x18\a \x01(\v2\x1a.health.v1.CollectionErrorH\x00R\x0fcollectionError\x12/\n" +
-	"\bno_value\x18\b \x01(\v2\x12.health.v1.NoValueH\x00R\anoValue\x12F\n" +
-	"\x11sample_started_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\x0fsampleStartedAt\x12B\n" +
-	"\x0fsample_ended_at\x18\n" +
-	" \x01(\v2\x1a.google.protobuf.TimestampR\rsampleEndedAtB\t\n" +
-	"\aoutcomeB\a\n" +
-	"\x05_unit\"\xd7\x06\n" +
-	"\x11ObservationTarget\x12(\n" +
-	"\x04node\x18\x01 \x01(\v2\x12.health.v1.NodeRefH\x00R\x04node\x12%\n" +
-	"\x03gpu\x18\x02 \x01(\v2\x11.health.v1.GpuRefH\x00R\x03gpu\x12H\n" +
-	"\x10nv_link_endpoint\x18\x03 \x01(\v2\x1c.health.v1.NvLinkEndpointRefH\x00R\x0envLinkEndpoint\x122\n" +
-	"\bgpu_pair\x18\x04 \x01(\v2\x15.health.v1.GpuPairRefH\x00R\agpuPair\x12N\n" +
-	"\x12infini_band_device\x18\x05 \x01(\v2\x1e.health.v1.InfiniBandDeviceRefH\x00R\x10infiniBandDevice\x12H\n" +
-	"\x10infini_band_port\x18\x06 \x01(\v2\x1c.health.v1.InfiniBandPortRefH\x00R\x0einfiniBandPort\x12A\n" +
-	"\rkernel_record\x18\a \x01(\v2\x1a.health.v1.KernelRecordRefH\x00R\fkernelRecord\x121\n" +
-	"\aprocess\x18\b \x01(\v2\x15.health.v1.ProcessRefH\x00R\aprocess\x12;\n" +
-	"\vgpu_process\x18\t \x01(\v2\x18.health.v1.GpuProcessRefH\x00R\n" +
-	"gpuProcess\x12>\n" +
-	"\fblock_device\x18\n" +
-	" \x01(\v2\x19.health.v1.BlockDeviceRefH\x00R\vblockDevice\x12+\n" +
-	"\x05mount\x18\v \x01(\v2\x13.health.v1.MountRefH\x00R\x05mount\x12%\n" +
-	"\x03pci\x18\f \x01(\v2\x11.health.v1.PCIRefH\x00R\x03pci\x12G\n" +
-	"\x0ffuse_connection\x18\r \x01(\v2\x1c.health.v1.FuseConnectionRefH\x00R\x0efuseConnection\x12A\n" +
-	"\rpstore_record\x18\x0e \x01(\v2\x1a.health.v1.PstoreRecordRefH\x00R\fpstoreRecordB\x06\n" +
-	"\x04kind\"\x19\n" +
-	"\aNodeRef\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"D\n" +
-	"\x06GpuRef\x12\x12\n" +
-	"\x04uuid\x18\x01 \x01(\tR\x04uuid\x12&\n" +
-	"\x0fsource_local_id\x18\x02 \x01(\tR\rsourceLocalId\"W\n" +
-	"\x11NvLinkEndpointRef\x12#\n" +
-	"\x03gpu\x18\x01 \x01(\v2\x11.health.v1.GpuRefR\x03gpu\x12\x1d\n" +
-	"\n" +
-	"link_index\x18\x02 \x01(\rR\tlinkIndex\"l\n" +
-	"\n" +
-	"GpuPairRef\x120\n" +
-	"\n" +
-	"source_gpu\x18\x01 \x01(\v2\x11.health.v1.GpuRefR\tsourceGpu\x12,\n" +
-	"\bpeer_gpu\x18\x02 \x01(\v2\x11.health.v1.GpuRefR\apeerGpu\")\n" +
-	"\x13InfiniBandDeviceRef\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\"_\n" +
-	"\x11InfiniBandPortRef\x126\n" +
-	"\x06device\x18\x01 \x01(\v2\x1e.health.v1.InfiniBandDeviceRefR\x06device\x12\x12\n" +
-	"\x04port\x18\x02 \x01(\rR\x04port\"F\n" +
-	"\x0fKernelRecordRef\x12\x17\n" +
-	"\aboot_id\x18\x01 \x01(\tR\x06bootId\x12\x1a\n" +
-	"\bsequence\x18\x02 \x01(\x03R\bsequence\"a\n" +
-	"\n" +
-	"ProcessRef\x12\x17\n" +
-	"\aboot_id\x18\x01 \x01(\tR\x06bootId\x12\x10\n" +
-	"\x03pid\x18\x02 \x01(\rR\x03pid\x12(\n" +
-	"\x10start_time_ticks\x18\x03 \x01(\x04R\x0estartTimeTicks\"e\n" +
-	"\rGpuProcessRef\x12#\n" +
-	"\x03gpu\x18\x01 \x01(\v2\x11.health.v1.GpuRefR\x03gpu\x12/\n" +
-	"\aprocess\x18\x02 \x01(\v2\x15.health.v1.ProcessRefR\aprocess\"<\n" +
-	"\x0eBlockDeviceRef\x12\x14\n" +
-	"\x05major\x18\x01 \x01(\rR\x05major\x12\x14\n" +
-	"\x05minor\x18\x02 \x01(\rR\x05minor\"C\n" +
-	"\bMountRef\x12\x1c\n" +
-	"\tnamespace\x18\x01 \x01(\tR\tnamespace\x12\x19\n" +
-	"\bmount_id\x18\x02 \x01(\x04R\amountId\"\"\n" +
-	"\x06PCIRef\x12\x18\n" +
-	"\aaddress\x18\x01 \x01(\tR\aaddress\"Q\n" +
-	"\x11FuseConnectionRef\x12\x17\n" +
-	"\aboot_id\x18\x01 \x01(\tR\x06bootId\x12#\n" +
-	"\rconnection_id\x18\x02 \x01(\x04R\fconnectionId\"=\n" +
-	"\x0fPstoreRecordRef\x12\x12\n" +
-	"\x04path\x18\x01 \x01(\tR\x04path\x12\x16\n" +
-	"\x06sha256\x18\x02 \x01(\tR\x06sha256\"\xba\x01\n" +
-	"\x05Value\x12\x1d\n" +
-	"\tint_value\x18\x01 \x01(\x03H\x00R\bintValue\x12#\n" +
-	"\fdouble_value\x18\x02 \x01(\x01H\x00R\vdoubleValue\x12#\n" +
-	"\fstring_value\x18\x03 \x01(\tH\x00R\vstringValue\x12\x1f\n" +
-	"\n" +
-	"bool_value\x18\x04 \x01(\bH\x00R\tboolValue\x12\x1f\n" +
-	"\n" +
-	"uint_value\x18\x05 \x01(\x04H\x00R\tuintValueB\x06\n" +
-	"\x04kind\"\xc2\x01\n" +
-	"\x0fCollectionError\x12\x16\n" +
-	"\x06source\x18\x01 \x01(\tR\x06source\x12\x1c\n" +
-	"\toperation\x18\x02 \x01(\tR\toperation\x12!\n" +
-	"\fsource_error\x18\x04 \x01(\tR\vsourceError\x12\x16\n" +
-	"\x06detail\x18\x05 \x01(\tR\x06detail\x12>\n" +
-	"\bcategory\x18\x03 \x01(\x0e2\".health.v1.CollectionErrorCategoryR\bcategory\"x\n" +
-	"\aNoValue\x120\n" +
-	"\x06reason\x18\x01 \x01(\x0e2\x18.health.v1.NoValueReasonR\x06reason\x12\x16\n" +
-	"\x06detail\x18\x02 \x01(\tR\x06detail\x12#\n" +
-	"\rsource_status\x18\x03 \x01(\tR\fsourceStatus*\xf7\x02\n" +
-	"\x17CollectionErrorCategory\x12)\n" +
-	"%COLLECTION_ERROR_CATEGORY_UNSPECIFIED\x10\x00\x12%\n" +
-	"!COLLECTION_ERROR_CATEGORY_TIMEOUT\x10\x01\x12)\n" +
-	"%COLLECTION_ERROR_CATEGORY_UNSUPPORTED\x10\x02\x12)\n" +
-	"%COLLECTION_ERROR_CATEGORY_UNAVAILABLE\x10\x03\x12,\n" +
-	"(COLLECTION_ERROR_CATEGORY_NOT_CONFIGURED\x10\x04\x12/\n" +
-	"+COLLECTION_ERROR_CATEGORY_PERMISSION_DENIED\x10\x05\x12)\n" +
-	"%COLLECTION_ERROR_CATEGORY_PARSE_ERROR\x10\x06\x12*\n" +
-	"&COLLECTION_ERROR_CATEGORY_SOURCE_ERROR\x10\a*s\n" +
-	"\rNoValueReason\x12\x1f\n" +
-	"\x1bNO_VALUE_REASON_UNSPECIFIED\x10\x00\x12!\n" +
-	"\x1dNO_VALUE_REASON_NOT_SUPPORTED\x10\x01\x12\x1e\n" +
-	"\x1aNO_VALUE_REASON_NO_TARGETS\x10\x02BQZOgithub.com/dsx-ai-factory/health-validation/collect/proto/go/health/v1;healthv1b\x06proto3"
+	"\n\x1bhealth/v1/observation.proto\x12\thealth.v1\x1a\x1fgoogle/protobuf/timest" +
+	"amp.proto\"\xaf\x01\n\x10ObservationBatch\x12#\n\x0dcollection_id\x18\x01 \x01(\tR\x0ccollectio" +
+	"nId\x12:\n\x0cobservations\x18\x02 \x03(\x0b2\x16.health.v1.ObservationR\x0cobservations\x12" +
+	":\n\tinventory\x18\x03 \x01(\x0b2\x1c.health.v1.HardwareInventoryR\tinventory\"Y\n\x11H" +
+	"ardwareInventory\x12D\n\x0dgpu_snapshots\x18\x01 \x03(\x0b2\x1f.health.v1.GpuInventory" +
+	"SnapshotR\x0cgpuSnapshots\"\xfa\x01\n\x14GpuInventorySnapshot\x12\x16\n\x06source\x18\x01 \x01(\tR" +
+	"\x06source\x12=\n\x0ccollected_at\x18\x02 \x01(\x0b2\x1a.google.protobuf.TimestampR\x0bcolle" +
+	"ctedAt\x127\n\tinventory\x18\x03 \x01(\x0b2\x17.health.v1.GpuInventoryH\x00R\tinventory\x12" +
+	"G\n\x10collection_error\x18\x04 \x01(\x0b2\x1a.health.v1.CollectionErrorH\x00R\x0fcollect" +
+	"ionErrorB\t\n\x07outcome\"F\n\x0cGpuInventory\x126\n\x07entries\x18\x01 \x03(\x0b2\x1c.health.v1" +
+	".GpuInventoryEntryR\x07entries\"\xd3\x02\n\x11GpuInventoryEntry\x12!\n\x0csource_inde" +
+	"x\x18\x01 \x01(\x0dR\x0bsourceIndex\x12&\n\x03gpu\x18\x02 \x01(\x0b2\x14.health.v1.GpuDeviceR\x03gpu\x12E\n\x10" +
+	"collection_error\x18\x03 \x01(\x0b2\x1a.health.v1.CollectionErrorR\x0fcollectionEr" +
+	"ror\x12P\n\x0cfield_errors\x18\x04 \x03(\x0b2-.health.v1.GpuInventoryEntry.FieldErr" +
+	"orsEntryR\x0bfieldErrors\x1aZ\n\x10FieldErrorsEntry\x12\x10\n\x03key\x18\x01 \x01(\tR\x03key\x120\n\x05v" +
+	"alue\x18\x02 \x01(\x0b2\x1a.health.v1.CollectionErrorR\x05value:\x028\x01\"\xa8\x07\n\tGpuDevice\x12" +
+	"\x17\n\x04uuid\x18\x01 \x01(\tH\x00R\x04uuid\x88\x01\x01\x12\x19\n\x05model\x18\x02 \x01(\tH\x01R\x05model\x88\x01\x01\x12\x1b\n\x06serial\x18\x03 " +
+	"\x01(\tH\x02R\x06serial\x88\x01\x01\x12\x1a\n\x06bus_id\x18\x04 \x01(\tH\x03R\x05busId\x88\x01\x01\x12\x19\n\x05brand\x18\x05 \x01(\tH\x04R\x05b" +
+	"rand\x88\x01\x01\x12(\n\x0dvbios_version\x18\x06 \x01(\tH\x05R\x0cvbiosVersion\x88\x01\x01\x12*\n\x0echassis_ser" +
+	"ial\x18\x07 \x01(\tH\x06R\x0dchassisSerial\x88\x01\x01\x12&\n\x0cminor_number\x18\x08 \x01(\x03H\x07R\x0bminorNumb" +
+	"er\x88\x01\x01\x123\n\x13fabric_cluster_uuid\x18\t \x01(\tH\x08R\x11fabricClusterUuid\x88\x01\x01\x12-\n\x10fa" +
+	"bric_clique_id\x18\n \x01(\x0dH\tR\x0efabricCliqueId\x88\x01\x01\x12=\n\x18compute_capability_" +
+	"major\x18\x0b \x01(\x0dH\nR\x16computeCapabilityMajor\x88\x01\x01\x12=\n\x18compute_capability_m" +
+	"inor\x18\x0c \x01(\x0dH\x0bR\x16computeCapabilityMinor\x88\x01\x01\x12;\n\x17framebuffer_total_byt" +
+	"es\x18\x0d \x01(\x04H\x0cR\x15framebufferTotalBytes\x88\x01\x01\x12*\n\x0edriver_version\x18\x0e \x01(\tH\x0dR\x0d" +
+	"driverVersion\x88\x01\x01\x123\n\x13cuda_driver_version\x18\x0f \x01(\tH\x0eR\x11cudaDriverVersi" +
+	"on\x88\x01\x01B\x07\n\x05_uuidB\x08\n\x06_modelB\t\n\x07_serialB\t\n\x07_bus_idB\x08\n\x06_brandB\x10\n\x0e_vbi" +
+	"os_versionB\x11\n\x0f_chassis_serialB\x0f\n\x0d_minor_numberB\x16\n\x14_fabric_cluste" +
+	"r_uuidB\x13\n\x11_fabric_clique_idB\x1b\n\x19_compute_capability_majorB\x1b\n\x19_com" +
+	"pute_capability_minorB\x1a\n\x18_framebuffer_total_bytesB\x11\n\x0f_driver_ver" +
+	"sionB\x16\n\x14_cuda_driver_version\"\x92\x04\n\x0bObservation\x12\x1b\n\tsignal_id\x18\x01 \x01(\tR" +
+	"\x08signalId\x12\x16\n\x06source\x18\x02 \x01(\tR\x06source\x124\n\x06target\x18\x03 \x01(\x0b2\x1c.health.v1.Ob" +
+	"servationTargetR\x06target\x12;\n\x0bobserved_at\x18\x04 \x01(\x0b2\x1a.google.protobuf.T" +
+	"imestampR\nobservedAt\x12\x17\n\x04unit\x18\x05 \x01(\tH\x01R\x04unit\x88\x01\x01\x12(\n\x05value\x18\x06 \x01(\x0b2\x10.h" +
+	"ealth.v1.ValueH\x00R\x05value\x12G\n\x10collection_error\x18\x07 \x01(\x0b2\x1a.health.v1.Co" +
+	"llectionErrorH\x00R\x0fcollectionError\x12/\n\x08no_value\x18\x08 \x01(\x0b2\x12.health.v1.N" +
+	"oValueH\x00R\x07noValue\x12F\n\x11sample_started_at\x18\t \x01(\x0b2\x1a.google.protobuf.T" +
+	"imestampR\x0fsampleStartedAt\x12B\n\x0fsample_ended_at\x18\n \x01(\x0b2\x1a.google.prot" +
+	"obuf.TimestampR\x0dsampleEndedAtB\t\n\x07outcomeB\x07\n\x05_unit\"\x86\x07\n\x11Observatio" +
+	"nTarget\x12(\n\x04node\x18\x01 \x01(\x0b2\x12.health.v1.NodeRefH\x00R\x04node\x12%\n\x03gpu\x18\x02 \x01(\x0b2\x11" +
+	".health.v1.GpuRefH\x00R\x03gpu\x12H\n\x10nv_link_endpoint\x18\x03 \x01(\x0b2\x1c.health.v1.N" +
+	"vLinkEndpointRefH\x00R\x0envLinkEndpoint\x122\n\x08gpu_pair\x18\x04 \x01(\x0b2\x15.health.v1" +
+	".GpuPairRefH\x00R\x07gpuPair\x12N\n\x12infini_band_device\x18\x05 \x01(\x0b2\x1e.health.v1.I" +
+	"nfiniBandDeviceRefH\x00R\x10infiniBandDevice\x12H\n\x10infini_band_port\x18\x06 \x01(\x0b" +
+	"2\x1c.health.v1.InfiniBandPortRefH\x00R\x0einfiniBandPort\x12A\n\x0dkernel_recor" +
+	"d\x18\x07 \x01(\x0b2\x1a.health.v1.KernelRecordRefH\x00R\x0ckernelRecord\x121\n\x07process\x18\x08" +
+	" \x01(\x0b2\x15.health.v1.ProcessRefH\x00R\x07process\x12;\n\x0bgpu_process\x18\t \x01(\x0b2\x18.he" +
+	"alth.v1.GpuProcessRefH\x00R\ngpuProcess\x12>\n\x0cblock_device\x18\n \x01(\x0b2\x19.heal" +
+	"th.v1.BlockDeviceRefH\x00R\x0bblockDevice\x12+\n\x05mount\x18\x0b \x01(\x0b2\x13.health.v1.M" +
+	"ountRefH\x00R\x05mount\x12%\n\x03pci\x18\x0c \x01(\x0b2\x11.health.v1.PCIRefH\x00R\x03pci\x12G\n\x0ffuse_" +
+	"connection\x18\x0d \x01(\x0b2\x1c.health.v1.FuseConnectionRefH\x00R\x0efuseConnection" +
+	"\x12A\n\x0dpstore_record\x18\x0e \x01(\x0b2\x1a.health.v1.PstoreRecordRefH\x00R\x0cpstoreRec" +
+	"ordB\x06\n\x04kind\x12-\n\x04pcie\x18\x0f \x01(\x0b2\x17.google.protobuf.StructH\x00R\x04pcie\"\x19\n\x07No" +
+	"deRef\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id\"D\n\x06GpuRef\x12\x12\n\x04uuid\x18\x01 \x01(\tR\x04uuid\x12&\n\x0fsource_lo" +
+	"cal_id\x18\x02 \x01(\tR\x0dsourceLocalId\"W\n\x11NvLinkEndpointRef\x12#\n\x03gpu\x18\x01 \x01(\x0b2\x11." +
+	"health.v1.GpuRefR\x03gpu\x12\x1d\n\nlink_index\x18\x02 \x01(\x0dR\tlinkIndex\"l\n\nGpuPairR" +
+	"ef\x120\n\nsource_gpu\x18\x01 \x01(\x0b2\x11.health.v1.GpuRefR\tsourceGpu\x12,\n\x08peer_gpu" +
+	"\x18\x02 \x01(\x0b2\x11.health.v1.GpuRefR\x07peerGpu\")\n\x13InfiniBandDeviceRef\x12\x12\n\x04nam" +
+	"e\x18\x01 \x01(\tR\x04name\"_\n\x11InfiniBandPortRef\x126\n\x06device\x18\x01 \x01(\x0b2\x1e.health.v1.I" +
+	"nfiniBandDeviceRefR\x06device\x12\x12\n\x04port\x18\x02 \x01(\x0dR\x04port\"F\n\x0fKernelRecordRe" +
+	"f\x12\x17\n\x07boot_id\x18\x01 \x01(\tR\x06bootId\x12\x1a\n\x08sequence\x18\x02 \x01(\x03R\x08sequence\"a\n\nProces" +
+	"sRef\x12\x17\n\x07boot_id\x18\x01 \x01(\tR\x06bootId\x12\x10\n\x03pid\x18\x02 \x01(\x0dR\x03pid\x12(\n\x10start_time_ti" +
+	"cks\x18\x03 \x01(\x04R\x0estartTimeTicks\"e\n\x0dGpuProcessRef\x12#\n\x03gpu\x18\x01 \x01(\x0b2\x11.health" +
+	".v1.GpuRefR\x03gpu\x12/\n\x07process\x18\x02 \x01(\x0b2\x15.health.v1.ProcessRefR\x07process" +
+	"\"<\n\x0eBlockDeviceRef\x12\x14\n\x05major\x18\x01 \x01(\x0dR\x05major\x12\x14\n\x05minor\x18\x02 \x01(\x0dR\x05minor\"C" +
+	"\n\x08MountRef\x12\x1c\n\tnamespace\x18\x01 \x01(\tR\tnamespace\x12\x19\n\x08mount_id\x18\x02 \x01(\x04R\x07moun" +
+	"tId\"\"\n\x06PCIRef\x12\x18\n\x07address\x18\x01 \x01(\tR\x07address\"Q\n\x11FuseConnectionRef\x12\x17\n\x07" +
+	"boot_id\x18\x01 \x01(\tR\x06bootId\x12#\n\x0dconnection_id\x18\x02 \x01(\x04R\x0cconnectionId\"=\n\x0fPs" +
+	"toreRecordRef\x12\x12\n\x04path\x18\x01 \x01(\tR\x04path\x12\x16\n\x06sha256\x18\x02 \x01(\tR\x06sha256\"\xba\x01\n\x05Va" +
+	"lue\x12\x1d\n\tint_value\x18\x01 \x01(\x03H\x00R\x08intValue\x12#\n\x0cdouble_value\x18\x02 \x01(\x01H\x00R\x0bdoub" +
+	"leValue\x12#\n\x0cstring_value\x18\x03 \x01(\tH\x00R\x0bstringValue\x12\x1f\n\nbool_value\x18\x04 \x01(\x08" +
+	"H\x00R\tboolValue\x12\x1f\n\nuint_value\x18\x05 \x01(\x04H\x00R\tuintValueB\x06\n\x04kind\"\xc2\x01\n\x0fColle" +
+	"ctionError\x12\x16\n\x06source\x18\x01 \x01(\tR\x06source\x12\x1c\n\toperation\x18\x02 \x01(\tR\toperation" +
+	"\x12!\n\x0csource_error\x18\x04 \x01(\tR\x0bsourceError\x12\x16\n\x06detail\x18\x05 \x01(\tR\x06detail\x12>\n\x08c" +
+	"ategory\x18\x03 \x01(\x0e2\".health.v1.CollectionErrorCategoryR\x08category\"x\n\x07N" +
+	"oValue\x120\n\x06reason\x18\x01 \x01(\x0e2\x18.health.v1.NoValueReasonR\x06reason\x12\x16\n\x06deta" +
+	"il\x18\x02 \x01(\tR\x06detail\x12#\n\x0dsource_status\x18\x03 \x01(\tR\x0csourceStatus*\xf7\x02\n\x17Collec" +
+	"tionErrorCategory\x12)\n%COLLECTION_ERROR_CATEGORY_UNSPECIFIED\x10\x00\x12%\n!" +
+	"COLLECTION_ERROR_CATEGORY_TIMEOUT\x10\x01\x12)\n%COLLECTION_ERROR_CATEGORY" +
+	"_UNSUPPORTED\x10\x02\x12)\n%COLLECTION_ERROR_CATEGORY_UNAVAILABLE\x10\x03\x12,\n(COL" +
+	"LECTION_ERROR_CATEGORY_NOT_CONFIGURED\x10\x04\x12/\n+COLLECTION_ERROR_CATE" +
+	"GORY_PERMISSION_DENIED\x10\x05\x12)\n%COLLECTION_ERROR_CATEGORY_PARSE_ERRO" +
+	"R\x10\x06\x12*\n&COLLECTION_ERROR_CATEGORY_SOURCE_ERROR\x10\x07*s\n\x0dNoValueReason" +
+	"\x12\x1f\n\x1bNO_VALUE_REASON_UNSPECIFIED\x10\x00\x12!\n\x1dNO_VALUE_REASON_NOT_SUPPORT" +
+	"ED\x10\x01\x12\x1e\n\x1aNO_VALUE_REASON_NO_TARGETS\x10\x02BQZOgithub.com/dsx-ai-factor" +
+	"y/health-validation/collect/proto/go/health/v1;healthv1b\x06proto3\x1a" +
+	"\x1cgoogle/protobuf/struct.proto"
 
 var (
 	file_health_v1_observation_proto_rawDescOnce sync.Once
@@ -2282,6 +2220,7 @@ var (
 		(*NoValue)(nil),               // 26: health.v1.NoValue
 		nil,                           // 27: health.v1.GpuInventoryEntry.FieldErrorsEntry
 		(*timestamppb.Timestamp)(nil), // 28: google.protobuf.Timestamp
+		(*structpb.Struct)(nil),       // 29: google.protobuf.Struct
 	}
 )
 
@@ -2317,20 +2256,21 @@ var file_health_v1_observation_proto_depIdxs = []int32{
 	21, // 28: health.v1.ObservationTarget.pci:type_name -> health.v1.PCIRef
 	22, // 29: health.v1.ObservationTarget.fuse_connection:type_name -> health.v1.FuseConnectionRef
 	23, // 30: health.v1.ObservationTarget.pstore_record:type_name -> health.v1.PstoreRecordRef
-	11, // 31: health.v1.NvLinkEndpointRef.gpu:type_name -> health.v1.GpuRef
-	11, // 32: health.v1.GpuPairRef.source_gpu:type_name -> health.v1.GpuRef
-	11, // 33: health.v1.GpuPairRef.peer_gpu:type_name -> health.v1.GpuRef
-	14, // 34: health.v1.InfiniBandPortRef.device:type_name -> health.v1.InfiniBandDeviceRef
-	11, // 35: health.v1.GpuProcessRef.gpu:type_name -> health.v1.GpuRef
-	17, // 36: health.v1.GpuProcessRef.process:type_name -> health.v1.ProcessRef
-	0,  // 37: health.v1.CollectionError.category:type_name -> health.v1.CollectionErrorCategory
-	1,  // 38: health.v1.NoValue.reason:type_name -> health.v1.NoValueReason
-	25, // 39: health.v1.GpuInventoryEntry.FieldErrorsEntry.value:type_name -> health.v1.CollectionError
-	40, // [40:40] is the sub-list for method output_type
-	40, // [40:40] is the sub-list for method input_type
-	40, // [40:40] is the sub-list for extension type_name
-	40, // [40:40] is the sub-list for extension extendee
-	0,  // [0:40] is the sub-list for field type_name
+	29, // 31: health.v1.ObservationTarget.pcie:type_name -> google.protobuf.Struct
+	11, // 32: health.v1.NvLinkEndpointRef.gpu:type_name -> health.v1.GpuRef
+	11, // 33: health.v1.GpuPairRef.source_gpu:type_name -> health.v1.GpuRef
+	11, // 34: health.v1.GpuPairRef.peer_gpu:type_name -> health.v1.GpuRef
+	14, // 35: health.v1.InfiniBandPortRef.device:type_name -> health.v1.InfiniBandDeviceRef
+	11, // 36: health.v1.GpuProcessRef.gpu:type_name -> health.v1.GpuRef
+	17, // 37: health.v1.GpuProcessRef.process:type_name -> health.v1.ProcessRef
+	0,  // 38: health.v1.CollectionError.category:type_name -> health.v1.CollectionErrorCategory
+	1,  // 39: health.v1.NoValue.reason:type_name -> health.v1.NoValueReason
+	25, // 40: health.v1.GpuInventoryEntry.FieldErrorsEntry.value:type_name -> health.v1.CollectionError
+	41, // [41:41] is the sub-list for method output_type
+	41, // [41:41] is the sub-list for method input_type
+	41, // [41:41] is the sub-list for extension type_name
+	41, // [41:41] is the sub-list for extension extendee
+	0,  // [0:41] is the sub-list for field type_name
 }
 
 func init() { file_health_v1_observation_proto_init() }
@@ -2363,6 +2303,7 @@ func file_health_v1_observation_proto_init() {
 		(*ObservationTarget_Pci)(nil),
 		(*ObservationTarget_FuseConnection)(nil),
 		(*ObservationTarget_PstoreRecord)(nil),
+		(*ObservationTarget_Pcie)(nil),
 	}
 	file_health_v1_observation_proto_msgTypes[22].OneofWrappers = []any{
 		(*Value_IntValue)(nil),

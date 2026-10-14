@@ -34,7 +34,9 @@ const toolkitSourcePrefix = "toolkit."
 // Each signal ID is the measurement's category and the field name the
 // catalog's checks read, e.g. "nvlink.inactive_count", so the batch carries
 // what the checks consume without depending on canonical collect signal
-// definitions. [ToMeasurements] reverses it.
+// definitions. [ToMeasurements] reverses the measurement types it supports.
+// PCIe observations identify devices through target.pcie and use stable
+// signal names such as pcie.link_width.
 //
 // A measurement with a gpu_id targets that GPU; any other measurement
 // targets the node, or carries no target when nodeID is empty. Scalar
@@ -44,11 +46,17 @@ const toolkitSourcePrefix = "toolkit."
 // value is never published as an observation. Values the catalog derives
 // at evaluation ([health.DerivedSignaler]) are not exported.
 func FromMeasurements(sensor, nodeID string, observedAt time.Time, measurements ...health.Measurement) ([]*observation.Observation, error) {
+	return FromMeasurementsWithPCITargets(sensor, nodeID, observedAt, nil, measurements...)
+}
+
+// FromMeasurementsWithPCITargets attaches shared device metadata to PCI facts.
+// Targets are keyed by full BDF; other domains retain their normal targets.
+func FromMeasurementsWithPCITargets(sensor, nodeID string, observedAt time.Time, targets map[string]*observation.ObservationTarget, measurements ...health.Measurement) ([]*observation.Observation, error) {
 	source := toolkitSourcePrefix + sensor
 	at := timestamppb.New(observedAt)
 	var out []*observation.Observation
 	for _, m := range measurements {
-		exported, err := export(source, nodeID, at, m)
+		exported, err := export(source, nodeID, at, m, targets)
 		if err != nil {
 			return nil, fmt.Errorf("export %s measurement: %w", sensor, err)
 		}
@@ -57,7 +65,7 @@ func FromMeasurements(sensor, nodeID string, observedAt time.Time, measurements 
 	return out, nil
 }
 
-func export(source, nodeID string, at *timestamppb.Timestamp, m health.Measurement) ([]*observation.Observation, error) {
+func export(source, nodeID string, at *timestamppb.Timestamp, m health.Measurement, pciTargets map[string]*observation.ObservationTarget) ([]*observation.Observation, error) {
 	// The interface fixes only the method set: a nil value, a nil pointer,
 	// or a non-struct type all satisfy it, and reflection over their fields
 	// would panic.
@@ -90,12 +98,70 @@ func export(source, nodeID string, at *timestamppb.Timestamp, m health.Measureme
 	target := measurementTarget(v, nodeID, failures)
 	prefix := m.Category().String() + "."
 	var out []*observation.Observation
+	if m.Category() == health.PCIe {
+		bdf := v.FieldByName("BDF")
+		device := v.FieldByName("Device")
+		if device.IsValid() && device.Kind() == reflect.Struct {
+			bdf = device.FieldByName("BDF")
+		}
+		if bdf.IsValid() && bdf.Kind() == reflect.String && bdf.String() != "" {
+			target = pciTargets[bdf.String()]
+			if target == nil {
+				properties := map[string]any{"bdf": bdf.String()}
+				if device.IsValid() && device.Kind() == reflect.Struct {
+					encoded, err := json.Marshal(device.Interface())
+					if err != nil {
+						return nil, err
+					}
+					if err = json.Unmarshal(encoded, &properties); err != nil {
+						return nil, err
+					}
+				}
+				for signal := range failures {
+					if signal != "bdf" {
+						nullPCIProperty(properties, "", pciSignalName(signal))
+					}
+				}
+				var err error
+				target, err = observation.PCIeTarget(nodeID, properties)
+				if err != nil {
+					return nil, err
+				}
+			}
+		}
+		if device.IsValid() && device.Kind() == reflect.Struct {
+			if bdf.IsValid() && bdf.Kind() == reflect.String && bdf.String() != "" {
+				out = append(out, &observation.Observation{
+					SignalId: prefix + "device_present", Source: source, Target: target, ObservedAt: at,
+					Outcome: &observation.Observation_Value{Value: boolValue(true)},
+				})
+			}
+			seen := make(map[string]bool)
+			for _, failure := range m.Errors() {
+				for _, signal := range failure.FailedSignals() {
+					if seen[signal] {
+						continue
+					}
+					seen[signal] = true
+					out = append(out, observation.NewCollectionErrorObservation(
+						prefix+pciSignalName(signal), nil, source, exportOperation, target, at, collectionError(failures[signal])))
+				}
+			}
+			return out, nil
+		}
+	}
 	for i := range v.NumField() {
 		field, ok := signalName(v.Type().Field(i))
 		if !ok {
 			continue
 		}
 		signalID := prefix + field
+		if m.Category() == health.PCIe {
+			if field == "pcie_link_bdf" || field == "pcie_error_bdf" {
+				continue
+			}
+			signalID = prefix + pciSignalName(field)
+		}
 		if errs := failures[field]; len(errs) > 0 {
 			out = append(out, observation.NewCollectionErrorObservation(
 				signalID, nil, source, exportOperation, target, at, collectionError(errs)))
@@ -119,6 +185,43 @@ func export(source, nodeID string, at *timestamppb.Timestamp, m health.Measureme
 		})
 	}
 	return out, nil
+}
+
+// Metadata errors name flattened catalog signals; targets retain nested fields.
+func nullPCIProperty(properties map[string]any, parent, signal string) {
+	switch signal {
+	case "iommu_group":
+		signal = "iommu_group_id"
+	case "iommu_group_devices":
+		signal = "iommu_devices"
+	case "max_link_speed_gt_per_sec":
+		signal = "max_speed_gt_per_sec"
+	case "max_link_width":
+		signal = "max_width"
+	}
+	for key, value := range properties {
+		qualified := key
+		if parent != "" {
+			qualified = parent + "_" + key
+		}
+		if key == signal || qualified == signal {
+			properties[key] = nil
+			continue
+		}
+		if nested, ok := value.(map[string]any); ok {
+			nullPCIProperty(nested, qualified, signal)
+		}
+	}
+}
+
+func pciSignalName(field string) string {
+	if value, ok := strings.CutPrefix(field, "pcie_"); ok {
+		return value
+	}
+	if value, ok := strings.CutPrefix(field, "pci_"); ok {
+		return value
+	}
+	return field
 }
 
 // measurementTarget returns the GPU a measurement describes, or the node for

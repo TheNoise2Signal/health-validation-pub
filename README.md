@@ -171,7 +171,7 @@ The verdict JSON is a versioned contract. [`catalog/health/node-verdict.schema.j
 Sensor.Measure() --> []Measurement --> Catalog.EvaluateAll() --> NodeVerdict
 ```
 
-Sensors collect typed measurements from hardware. A sensor can produce one measurement per device or one host-wide measurement. The toolkit includes NVML-backed GPU, node, and NVLink sensors, a CPU sensor backed by Linux sysfs, an Xid sensor backed by `journalctl`, and mock constructors for testing. Sensors that cannot observe their source return an errored measurement rather than failing the whole run; the catalog decides per-check whether to surface a CRITICAL verdict or skip.
+Sensors collect typed measurements from hardware. A sensor can produce one measurement per device or one host-wide measurement. The toolkit includes NVML-backed GPU, node, and NVLink sensors, CPU and PCI sensors backed by Linux sysfs, an Xid sensor backed by `journalctl`, and mock constructors for testing. Sensors that cannot observe their source return an errored measurement rather than failing the whole run; the catalog decides per-check whether to surface a CRITICAL verdict or skip.
 
 The CPU sensor counts the logical CPUs in `/sys/devices/system/cpu/possible` and `/sys/devices/system/cpu/online`, and the NUMA nodes in `/sys/devices/system/node/online`. The `cpu_count` check requires no operator configuration and reports CRITICAL when a kernel-possible CPU is not online. It assumes the target platform does not advertise intentionally unused CPU hotplug capacity and does not validate an exact VM or machine-SKU count, process affinity, or cgroup CPU limits.
 
@@ -207,6 +207,10 @@ The catalog includes these check families:
 | `gpu_sensor_throttle` | gpu | Whether any GPU is being clamped by hardware slowdown, thermal, or power-brake protection | None |
 | `gpu_compute_apps` | gpu | Whether any compute process still holds a GPU | None |
 | `gpu_count` | node | Number of GPUs present on the node | `expected_gpu_count` |
+| `pcie_device_presence` | pcie | Whether every expected PCI BDF is present; additional devices are allowed | `expected_device_bdfs` |
+| `pcie_link_speed` | pcie | Whether each device's negotiated link speed meets its configured minimum | `min_link_speed_gt_per_sec_by_bdf` |
+| `pcie_link_width` | pcie | Whether each device's negotiated lane count matches its configured width | `expected_link_width_by_bdf` |
+| `pcie_error_counters` | pcie | Cumulative AER correctable, nonfatal, and fatal error counts since their last reset | `max_correctable_errors`, `max_nonfatal_errors`, `max_fatal_errors` |
 | `nvlink_active` | nvlink | Number of active NVLink connections | `max_inactive_nvlinks` |
 | `nvlink_fabric_health` | nvlink | NVLink fabric-health fault bits (degraded bandwidth, route recovery, access timeout) | None |
 | `nvlink_fabric` | nvlink | Whether each GPU is registered with the NVLink fabric | None |
@@ -218,6 +222,20 @@ The catalog includes these check families:
 | `gpu_xid_149_<hex>` | xid | One check per Xid 149 NETIR_LINK_EVT/NETIR_LINK_DOWN subtype NVIDIA's decode table distinguishes | None |
 | `gpu_xid_warning` | xid | Consolidated WARNING check for warning-class Xid codes | None |
 | `gpu_xid_154` | xid | Xid 154 (INFO — recovery action changed) | None |
+
+The PCI checks are experimental and apply in `OPERATOR_INFRA`. Device presence,
+link speed, and link width require operator-supplied expectations and skip when
+those thresholds are unconfigured. Speed and width expectations are keyed by
+full BDF. Link speed runs in the Prolog and Maintenance cadence windows; the
+other PCI checks also run in Continuous. Omitting cadence evaluates all
+registered checks.
+
+AER budgets default to zero. Correctable errors above their budget produce
+WARNING with a monitoring recommendation; nonfatal or fatal errors above their
+budgets produce CRITICAL with a drain/service recommendation. Other observed
+critical PCI faults also recommend drain/service. Devices without AER statistics
+are omitted from the AER check; if none expose them, that check skips. The CLI
+still exits `0` for WARNING, so inspect the JSON severity to enforce zero errors.
 
 Each check definition carries:
 
@@ -235,6 +253,7 @@ Each check definition carries:
 - Linux sysfs exposing `/sys/devices/system/cpu/{possible,online}` and `/sys/devices/system/node/online` (required for CPU collection)
 - NVIDIA driver (required for the GPU sensor; not required if you supply measurements directly)
 - NVML (libnvidia-ml) for the NVML-backed sensor
+- Linux sysfs filesystem (required for PCIe collection)
 
 OS: Linux (x86_64, aarch64). CPU collection reads sysfs directly without sudo or an external executable. The toolkit GPU sensor is Linux-only; the catalog package compiles and runs on any platform.
 
@@ -282,10 +301,44 @@ Run with a config file (threshold overrides):
 Collect sensor measurements without evaluating checks:
 
 ```shell
-./health-validation collect > observations.json
+./health-validation collect > collection.json
 ```
 
-For `collect`, an optional config's check IDs select the sensor domains to run. Without one, every built-in sensor domain runs. The output is one `ObservationBatch` (`collect/proto/health/v1/observation.proto`) in protojson form, with one observation per measurement field. Each signal ID is the domain plus the field name the checks read (e.g. `nvlink.inactive_count`); these are toolkit names, not canonical collect signal IDs. GPU measurements target the GPU and host-wide ones target the node (`--node-id`, defaulting to the hostname). Each observation carries a `value`, a `collectionError`, or a `noValue`; map and list fields are JSON-encoded strings. A signal the source reports as unsupported is a `noValue` with reason `NO_VALUE_REASON_NOT_SUPPORTED`, never a zero value. Sensor failures remain structured data and do not change the successful exit code.
+An optional config's check IDs select the sensor domains to run. Without one,
+every built-in sensor domain runs. The output is an `ObservationBatch` in
+protobuf JSON form. Every observation has a signal ID, source, target, timestamp,
+and one of `value`, `collectionError`, or `noValue`. Sensor failures remain
+structured data and do not change the successful exit code.
+
+To collect only PCI devices, select any PCIe check in a config (thresholds are
+not needed for collection):
+
+```yaml
+# pcie-collect.yaml
+checks:
+  pcie_link_width: {}
+```
+
+```shell
+./health-validation collect --config pcie-collect.yaml > pci-observations.json
+```
+
+PCI facts use stable signal IDs such as `pcie.link_width`,
+`pcie.link_speed_gt_per_sec`, and `pcie.fatal_errors`. Their `target.pcie` contains
+the device context as a structured object: node ID, BDF, parent BDF, type,
+hexadecimal hardware IDs, revision, driver, link settings/capabilities, NUMA/CPU
+locality, IOMMU, ACS, and SR-IOV information. Target properties use camelCase,
+matching the surrounding protobuf JSON. Unavailable properties are null and
+failures are separate `collectionError` outcomes; target metadata is not JSON
+encoded inside a string. AER counts are values of individual observations,
+not duplicated in the target.
+
+Each discovered device has a `pcie.device_present` observation. Devices without
+AER counters have no AER observations. The complete BDF inventory is a node-targeted
+`pcie.device_bdfs` observation; discovery failures are collection errors, while
+an empty inventory is the JSON-encoded list `[]`. GPU/NVLink and other domains
+retain their existing target types and signal names. The existing
+`observations.ToMeasurements` adapter does not rebuild PCI facts yet.
 
 Slurm prolog integration:
 

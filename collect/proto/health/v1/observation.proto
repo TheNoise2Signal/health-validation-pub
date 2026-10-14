@@ -6,6 +6,7 @@ syntax = "proto3";
 package health.v1;
 
 import "google/protobuf/timestamp.proto";
+import "google/protobuf/struct.proto";
 
 option go_package = "github.com/dsx-ai-factory/health-validation/collect/proto/go/health/v1;healthv1";
 
@@ -126,6 +127,10 @@ message ObservationTarget {
     PCIRef pci = 12;
     FuseConnectionRef fuse_connection = 13;
     PstoreRecordRef pstore_record = 14;
+    // Device context includes nodeId, bdf, parentBdf, hardware IDs, type,
+    // driver, locality, link capabilities, IOMMU, ACS, and SR-IOV metadata.
+    // Unavailable attributes are null; their causes live in observations.
+    google.protobuf.Struct pcie = 15;
   }
 }
 

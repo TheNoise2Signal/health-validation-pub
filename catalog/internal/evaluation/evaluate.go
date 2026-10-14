@@ -307,18 +307,20 @@ func checkLevelSkip(cd *health.CheckDefinition, p Params, now time.Time) (health
 // [health.EntityIdentifier]) and is empty for host-wide measurements.
 func (e *EvaluationEngine) evaluateAgainst(cd *health.CheckDefinition, signals map[string]any, errs []health.ErroredMeasurement, entity string, p Params, now time.Time) (health.CheckVerdict, error) {
 	// If any of the sensor's per-field failures cover a signal the
-	// check requires, fail the check with a Critical verdict rather
+	// check requires, fail the check rather
 	// than running CEL against a zero value where a real measurement
 	// should be. The verdict's detail joins every error entry that
 	// touched one of this check's required signals so the message
 	// names exactly what went wrong. Checks whose required signals
 	// were all collected fall through to normal evaluation against
 	// the partial data.
-	if detail, action := matchingError(errs, cd.RequiredSignals); detail != "" {
+	if detail, action, severity := matchingError(errs, cd.RequiredSignals); detail != "" {
 		// Observation failure: the data was unavailable, so the rules never
 		// ran. The verdict carries a collection-failure action, never the
 		// check's hardware-remediation default (that is for matched rules).
-		return withEntity(ErroredVerdict(cd, now, detail, action), entity), nil
+		v := ErroredVerdict(cd, now, detail, action)
+		v.Severity = severity
+		return withEntity(v, entity), nil
 	}
 
 	resolved, err := health.ResolveThresholds(cd.ID, cd.Thresholds, p.Overrides, p.Architecture)
@@ -435,8 +437,8 @@ func withEntity(v health.CheckVerdict, entity string) health.CheckVerdict {
 
 // matchingError inspects the error entries whose FailedSignals overlap the
 // check's required signals. It returns a joined detail string of their
-// causes ("" when none match) and the recommended action for the resulting
-// Critical verdict.
+// causes ("" when none match), the recommended action, and severity. Only
+// explicitly unavailable signals produce Unknown; other failures are Critical.
 //
 // These are observation failures, not observed faults — the CEL rules
 // never ran — so the action is never the check's hardware-remediation
@@ -446,16 +448,20 @@ func withEntity(v health.CheckVerdict, entity string) health.CheckVerdict {
 // hardware. A non-timeout failure outranks a timeout when both are
 // present, since a concrete collection error is more actionable than a
 // slow read.
-func matchingError(errs []health.ErroredMeasurement, required []string) (detail string, action health.RecommendedAction) {
+func matchingError(errs []health.ErroredMeasurement, required []string) (detail string, action health.RecommendedAction, severity health.Severity) {
 	if len(errs) == 0 {
-		return "", health.NoAction
+		return "", health.NoAction, health.Critical
 	}
 	var details []string
 	var hasTimeout, hasOther bool
+	severity = health.Unknown
 	for _, e := range errs {
 		for _, sig := range required {
 			if slices.Contains(e.FailedSignals(), sig) {
 				details = append(details, e.Err().Error())
+				if !errors.Is(e.Err(), health.ErrSignalUnavailable) {
+					severity = health.Critical
+				}
 				if errors.Is(e.Err(), health.ErrCollectionTimeout) {
 					hasTimeout = true
 				} else {
@@ -471,7 +477,7 @@ func matchingError(errs []health.ErroredMeasurement, required []string) (detail 
 	case hasTimeout:
 		action = health.Drain(health.RemediationActionRetryCollection)
 	}
-	return strings.Join(details, "; "), action
+	return strings.Join(details, "; "), action, severity
 }
 
 // requiredThresholds returns the names of specs the operator must supply,

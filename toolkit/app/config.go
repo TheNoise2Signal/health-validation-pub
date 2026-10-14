@@ -307,6 +307,38 @@ func coerce(val, ref any) (any, error) {
 			return v, nil
 		}
 		return nil, fmt.Errorf("expected a string, got %T", val)
+	case map[string]int64:
+		values, ok := val.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("expected a map of integers, got %T", val)
+		}
+		out := make(map[string]int64, len(values))
+		for _, key := range sortedKeys(values) {
+			value, err := coerce(values[key], int64(0))
+			if err != nil {
+				return nil, fmt.Errorf("key %q: %w", key, err)
+			}
+			out[key] = value.(int64)
+		}
+		return out, nil
+	case map[string]float64:
+		values, ok := val.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("expected a map of numbers, got %T", val)
+		}
+		out := make(map[string]float64, len(values))
+		for _, key := range sortedKeys(values) {
+			value, err := coerce(values[key], float64(0))
+			if err != nil {
+				return nil, fmt.Errorf("key %q: %w", key, err)
+			}
+			number := value.(float64)
+			if math.IsNaN(number) || math.IsInf(number, 0) {
+				return nil, fmt.Errorf("key %q: expected a finite number, got %v", key, number)
+			}
+			out[key] = number
+		}
+		return out, nil
 	case []string:
 		items, ok := val.([]any)
 		if !ok {

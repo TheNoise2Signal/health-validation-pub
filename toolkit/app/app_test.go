@@ -21,6 +21,7 @@ import (
 	"github.com/dsx-ai-factory/health-validation/catalog/health"
 	"github.com/dsx-ai-factory/health-validation/catalog/node"
 	"github.com/dsx-ai-factory/health-validation/catalog/nvlink"
+	"github.com/dsx-ai-factory/health-validation/catalog/pcie"
 	"github.com/dsx-ai-factory/health-validation/collect/observation"
 	"github.com/dsx-ai-factory/health-validation/toolkit"
 	"github.com/dsx-ai-factory/health-validation/toolkit/observations"
@@ -86,7 +87,7 @@ func TestCollectionOutputEmitsObservationBatch(t *testing.T) {
 }
 
 func TestCollectCommandWritesObservationBatch(t *testing.T) {
-	a := New().WithProgramName("test")
+	a := newTestApp().WithProgramName("test")
 	a.host = fakeHost{b: spyBackend{called: new(bool)}}
 	a.WithGPUBackend(toolkit.MockGPU(gpu.GPUMeasurement{GPUID: "GPU-0", PowerLimitW: 700, EnforcedPowerLimitW: 700}))
 	a.WithXidBackend(xidSpyBackend{called: new(bool)})
@@ -99,7 +100,7 @@ func TestCollectCommandWritesObservationBatch(t *testing.T) {
 	}
 	var batch observation.ObservationBatch
 	if err := protojson.Unmarshal(stdout.Bytes(), &batch); err != nil {
-		t.Fatalf("stdout is not an ObservationBatch: %v\n%s", err, stdout.String())
+		t.Fatal(err)
 	}
 	if err := observation.ValidateBatch(&batch); err != nil {
 		t.Fatal(err)
@@ -130,6 +131,11 @@ func TestCollectCommandWritesObservationBatch(t *testing.T) {
 	if rebuilt == nil || rebuilt.GPUID != "GPU-0" || rebuilt.PowerLimitW != 700 || len(rebuilt.Errors()) != 0 {
 		t.Fatalf("rebuilt GPU measurement = %+v", rebuilt)
 	}
+}
+
+// newTestApp avoids reading the host's PCI sysfs in application unit tests.
+func newTestApp() *App {
+	return New().WithPCIeBackend(toolkit.MockPCIe(pcie.ErrorMeasurement{}))
 }
 
 // customCheck is a minimal node check used to exercise the WithChecks SPI.
@@ -309,7 +315,7 @@ func TestRunCommandRejectsInvalidNodeID(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			a := New().WithProgramName("test")
+			a := newTestApp().WithProgramName("test")
 			if tt.withBuilder {
 				a.WithNodeID(tt.builderNodeID)
 			}
@@ -336,7 +342,7 @@ func TestRunCommandRejectsInvalidNodeID(t *testing.T) {
 func TestRunCommandDefaultsNodeIDToHostname(t *testing.T) {
 	const hostname = "nvl72d014-T02"
 	hostnameCalls := 0
-	a := New().WithProgramName("test")
+	a := newTestApp().WithProgramName("test")
 	a.hostname = func() (string, error) {
 		hostnameCalls++
 		return "  " + hostname + "  ", nil
@@ -389,7 +395,7 @@ func TestRunCommandRejectsInvalidHostname(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			a := New().WithProgramName("test")
+			a := newTestApp().WithProgramName("test")
 			a.hostname = tt.hostname
 			a.host = panicHost{}
 
@@ -410,7 +416,7 @@ func TestRunCommandRejectsInvalidHostname(t *testing.T) {
 }
 
 func TestVersionDoesNotResolveHostname(t *testing.T) {
-	a := New().WithProgramName("test")
+	a := newTestApp().WithProgramName("test")
 	a.hostname = func() (string, error) {
 		panic("unexpected hostname lookup")
 	}
@@ -423,7 +429,7 @@ func TestVersionDoesNotResolveHostname(t *testing.T) {
 }
 
 func TestRunCommandRejectsUnexpectedArguments(t *testing.T) {
-	a := New().WithProgramName("test").WithNodeID("builder-node")
+	a := newTestApp().WithProgramName("test").WithNodeID("builder-node")
 	a.host = panicHost{}
 
 	var stdout, stderr bytes.Buffer
@@ -439,7 +445,7 @@ func TestRunCommandRejectsUnexpectedArguments(t *testing.T) {
 }
 
 func TestRunCommandNodeIDFlagOverridesBuilder(t *testing.T) {
-	a := New().WithProgramName("test").WithNodeID("builder-node")
+	a := newTestApp().WithProgramName("test").WithNodeID("builder-node")
 	a.hostname = func() (string, error) {
 		panic("unexpected hostname lookup")
 	}
@@ -464,7 +470,7 @@ func TestRunCommandNodeIDFlagOverridesBuilder(t *testing.T) {
 }
 
 func TestRunNodeIDFlagOverridesHostname(t *testing.T) {
-	a := New().WithProgramName("test")
+	a := newTestApp().WithProgramName("test")
 	a.hostname = func() (string, error) {
 		panic("unexpected hostname lookup")
 	}
@@ -494,7 +500,7 @@ func TestRunNodeIDFlagOverridesHostname(t *testing.T) {
 func TestWithGPUBackendOverridesHost(t *testing.T) {
 	var hostGPUCalled, overrideCalled bool
 
-	a := New()
+	a := newTestApp()
 	a.host = fakeHost{b: spyBackend{called: &hostGPUCalled}}
 	a.WithGPUBackend(spyBackend{called: &overrideCalled})
 	a.WithNodeID(testNodeID)
@@ -521,7 +527,7 @@ func TestWithGPUBackendOverridesHost(t *testing.T) {
 func TestDefaultUsesHostBackend(t *testing.T) {
 	var hostGPUCalled bool
 
-	a := New().WithNodeID("  builder-node  ")
+	a := newTestApp().WithNodeID("  builder-node  ")
 	a.hostname = func() (string, error) {
 		panic("unexpected hostname lookup")
 	}
@@ -550,7 +556,7 @@ func TestDefaultUsesHostBackend(t *testing.T) {
 
 func TestWithCPUBackendOverridesSysfs(t *testing.T) {
 	var cpuCalled bool
-	a := New()
+	a := newTestApp()
 	a.host = fakeHost{b: spyBackend{called: new(bool)}}
 	a.WithCPUBackend(cpuBackendFunc(func(context.Context) (cpu.CPUMeasurement, error) {
 		cpuCalled = true
@@ -601,7 +607,7 @@ func TestWithCPUBackendOverridesSysfs(t *testing.T) {
 // topology mismatch reaches the emitted verdict through the real run path,
 // which a direct catalog evaluation cannot establish.
 func TestNUMANodeCountReachesVerdict(t *testing.T) {
-	a := New()
+	a := newTestApp()
 	a.host = fakeHost{b: spyBackend{called: new(bool)}}
 	a.WithCPUBackend(toolkit.MockCPU(cpu.CPUMeasurement{
 		PossibleCPUCount: 8,
@@ -773,7 +779,7 @@ func TestWriteVerdictNodeID(t *testing.T) {
 func TestWithXidBackendOverridesJournalctl(t *testing.T) {
 	var xidCalled bool
 
-	a := New()
+	a := newTestApp()
 	a.host = fakeHost{b: spyBackend{called: new(bool)}}
 	a.WithCPUBackend(toolkit.MockCPU(cpu.CPUMeasurement{PossibleCPUCount: 1, OnlineCPUCount: 1, NUMANodeCount: 34}))
 	a.WithXidBackend(xidSpyBackend{called: &xidCalled})
@@ -796,7 +802,7 @@ func TestWithXidBackendOverridesJournalctl(t *testing.T) {
 // with no config needed. (Without a backend it does not run at all.)
 func TestIBSensorCollectsWithBackend(t *testing.T) {
 	var ibCalled bool
-	a := New().WithNodeID(testNodeID)
+	a := newTestApp().WithNodeID(testNodeID)
 	a.host = fakeHost{b: spyBackend{called: new(bool)}}
 	a.WithXidBackend(xidSpyBackend{called: new(bool)})
 	a.WithRDMALinkFlapBackend(toolkit.MockRDMALinkFlap())
@@ -831,7 +837,7 @@ func (erroringHost) close() error                           { return nil }
 // skip its way to PASS. The Critical verdict maps to exitUnhealthy.
 func TestRunCommandArchDiscoveryFailureDrains(t *testing.T) {
 	var collected, cpuCollected bool
-	a := New()
+	a := newTestApp()
 	a.hostname = func() (string, error) {
 		return "  nvl72d014-T02  ", nil
 	}
@@ -887,7 +893,7 @@ func verdictHasCheck(nv health.NodeVerdict, id string) bool {
 }
 
 func cadenceRunApp() *App {
-	a := New().WithProgramName("test")
+	a := newTestApp().WithProgramName("test")
 	a.host = fakeHost{b: spyBackend{called: new(bool)}}
 	a.WithXidBackend(xidSpyBackend{called: new(bool)})
 	a.WithRDMALinkFlapBackend(toolkit.MockRDMALinkFlap())
@@ -896,7 +902,7 @@ func cadenceRunApp() *App {
 }
 
 func TestRunCommandRejectsInvalidCadence(t *testing.T) {
-	a := New().WithProgramName("test")
+	a := newTestApp().WithProgramName("test")
 	a.host = panicHost{}
 	var stdout, stderr bytes.Buffer
 	if code := a.Run([]string{"run", "--node-id", testNodeID, "--cadence", "NOT_A_CADENCE"}, &stdout, &stderr); code != exitError {

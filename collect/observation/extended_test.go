@@ -28,12 +28,17 @@ func extendedObservation(target *ObservationTarget) *Observation {
 }
 
 func TestExtendedTargetsRoundTrip(t *testing.T) {
+	pciDevice, err := PCIeTarget("node-1", map[string]any{"bdf": "0000:af:1f.7", "vendor_id": "0x10de"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	targets := map[string]*ObservationTarget{
 		"process":         ProcessTarget(extendedBootID, 42, ^uint64(0)),
 		"GPU process":     GPUProcessTarget("GPU-0", extendedBootID, 42, ^uint64(0)),
 		"block device":    BlockDeviceTarget(259, 7),
 		"mount":           MountTarget("mnt:[4026531841]", ^uint64(0)),
 		"PCI":             PCITarget("0000:af:1f.7"),
+		"PCIe device":     pciDevice,
 		"FUSE connection": FUSEConnectionTarget(extendedBootID, ^uint64(0)),
 		"pstore record":   PstoreRecordTarget("var/lib/systemd/pstore/123/dmesg.txt", extendedDigest),
 	}

@@ -12,3 +12,7 @@ import "errors"
 // retry-collection action distinct from a fault's remediation. Match it
 // with [errors.Is].
 var ErrCollectionTimeout = errors.New("collection timed out")
+
+// ErrSignalUnavailable marks an unobservable signal; evaluation reports UNKNOWN
+// when every failure affecting a check carries this marker. Match with errors.Is.
+var ErrSignalUnavailable = errors.New("signal unavailable")

@@ -367,3 +367,43 @@ func TestNewNoValueObservationOwnsNoValue(t *testing.T) {
 		t.Fatalf("mutating first no-value changed second no-value to %q", secondNoValue.GetDetail())
 	}
 }
+
+func TestPCIeTarget(t *testing.T) {
+	target, err := PCIeTarget("node-1", map[string]any{
+		"bdf": "0000:65:00.0", "parent_bdf": "0000:64:00.0", "vendor_id": "0x10de",
+		"link":         map[string]any{"current_width": int64(16), "max_width": nil},
+		"field_errors": map[string][]string{"acs.supported": {"unavailable"}},
+		"aer":          map[string]any{"fatal_errors": int64(0)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = validateTarget(target); err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := protojson.Marshal(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var restored ObservationTarget
+	if err = protojson.Unmarshal(encoded, &restored); err != nil {
+		t.Fatal(err)
+	}
+	fields := restored.GetPcie().AsMap()
+	if fields["bdf"] != "0000:65:00.0" || fields["nodeId"] != "node-1" || fields["parentBdf"] != "0000:64:00.0" || fields["vendorId"] != "0x10de" {
+		t.Fatalf("PCI identity: %s", encoded)
+	}
+	link := fields["link"].(map[string]any)
+	if link["currentWidth"] != float64(16) || link["maxWidth"] != nil {
+		t.Fatalf("PCI link context: %s", encoded)
+	}
+	if _, ok := fields["fieldErrors"]; ok {
+		t.Fatal("field errors were embedded in the target")
+	}
+	if _, ok := fields["aer"]; ok {
+		t.Fatal("AER measurements were embedded in the target")
+	}
+	if err := validateTarget(&ObservationTarget{Kind: &ObservationTarget_PCIE{}}); err == nil {
+		t.Fatal("empty PCI target was accepted")
+	}
+}

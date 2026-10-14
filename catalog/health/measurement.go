@@ -33,7 +33,8 @@ type Measurement interface {
 // may carry several entries — one per failing call.
 //
 // The catalog fails a check Critical when any entry's FailedSignals
-// overlaps with the check's RequiredSignals; the verdict's message
+// overlaps with the check's RequiredSignals, or Unknown when all matching
+// failures wrap [ErrSignalUnavailable]; the verdict's message
 // joins the matching entries' Err.Error() strings. Checks whose
 // required signals were all collected still run normally on the
 // partial data.
