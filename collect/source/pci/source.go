@@ -194,6 +194,8 @@ func (s *Source) Read(ctx context.Context, selected collect.Signals) ([]Reading,
 				if err == nil {
 					reading.Value = &observation.Value{Kind: &observation.Value_BoolValue{BoolValue: vendor == 0x10de && (class>>8 == 0x0300 || class>>8 == 0x0302 || class>>16 == 0x12)}}
 				}
+			case pcisignals.LinkSpeed.ID(), pcisignals.MaxLinkSpeed.ID(), pcisignals.LinkWidth.ID(), pcisignals.MaxLinkWidth.ID(), pcisignals.LinkGeneration.ID(), pcisignals.MaxLinkGeneration.ID():
+				err = s.property(base, &reading)
 			default:
 				reading.Path = path.Join(base, "config")
 				if !acsRead {
