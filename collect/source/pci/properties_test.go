@@ -18,6 +18,8 @@ import (
 	pcisignals "github.com/dsx-ai-factory/health-validation/collect/signals/pci"
 )
 
+// readProperty reads the single signal from files and fails the test unless
+// exactly one reading is returned.
 func readProperty(t *testing.T, files fs.FS, signal collect.Signal) Reading {
 	t.Helper()
 	readings, err := New(files).Read(context.Background(), collect.Signals{signal})
@@ -27,18 +29,23 @@ func readProperty(t *testing.T, files fs.FS, signal collect.Signal) Reading {
 	return readings[0]
 }
 
+// propertyFixture builds a single-device sysfs fixture with field set to value.
 func propertyFixture(field, value string) fstest.MapFS {
 	return fstest.MapFS{Root + "/0000:01:00.0": {Mode: fs.ModeDir | 0o755}, Root + "/0000:01:00.0/" + field: {Data: []byte(value)}}
 }
 
+// signed wraps n as an int64 observation value.
 func signed(n int64) *observation.Value {
 	return &observation.Value{Kind: &observation.Value_IntValue{IntValue: n}}
 }
 
+// double wraps n as a double observation value.
 func double(n float64) *observation.Value {
 	return &observation.Value{Kind: &observation.Value_DoubleValue{DoubleValue: n}}
 }
 
+// TestLinkValues checks that link speed, width, and generation signals parse
+// their sysfs attributes into the expected observation values.
 func TestLinkValues(t *testing.T) {
 	for _, test := range []struct {
 		signal collect.Signal
@@ -66,6 +73,8 @@ func TestLinkValues(t *testing.T) {
 	}
 }
 
+// TestLinksUnsupported checks that missing link attributes and unknown speeds
+// produce NotSupported no-value readings instead of errors.
 func TestLinksUnsupported(t *testing.T) {
 	fixture := fstest.MapFS{Root + "/0000:01:00.0": {Mode: fs.ModeDir | 0o755}}
 	for _, signal := range pcisignals.All()[10:] {
@@ -88,6 +97,8 @@ func TestLinksUnsupported(t *testing.T) {
 	}
 }
 
+// TestLinkValuesMalformed checks that malformed link attribute values produce
+// parse-error failures referencing the attribute path.
 func TestLinkValuesMalformed(t *testing.T) {
 	for _, test := range []struct {
 		signal collect.Signal
@@ -111,12 +122,14 @@ func TestLinkValuesMalformed(t *testing.T) {
 	}
 }
 
+// failingAttribute wraps an fs.FS and makes Open fail for a single named file.
 type failingAttribute struct {
 	fs.FS
 	err  error
 	name string
 }
 
+// Open returns f.err for f.name and otherwise delegates to the wrapped fs.FS.
 func (f failingAttribute) Open(name string) (fs.File, error) {
 	if name == f.name {
 		return nil, &fs.PathError{Op: "open", Path: name, Err: f.err}
@@ -124,6 +137,8 @@ func (f failingAttribute) Open(name string) (fs.File, error) {
 	return f.FS.Open(name)
 }
 
+// TestLinkReadFailures checks that permission, not-exist, and other open
+// errors on link attributes map to the corresponding failure categories.
 func TestLinkReadFailures(t *testing.T) {
 	for _, test := range []struct {
 		err      error
@@ -148,6 +163,8 @@ func TestLinkReadFailures(t *testing.T) {
 	}
 }
 
+// TestMultipleDeviceLinks checks that link readings across several devices are
+// resolved independently, so one device's malformed value does not affect others.
 func TestMultipleDeviceLinks(t *testing.T) {
 	files := propertyFixture("current_link_speed", "16.0 GT/s PCIe")
 	files[Root+"/0000:02:00.0/current_link_speed"] = &fstest.MapFile{Data: []byte("broken")}
@@ -173,6 +190,8 @@ func TestMultipleDeviceLinks(t *testing.T) {
 	}
 }
 
+// TestLinkGenerations checks that every defined PCI generation speed maps to
+// its generation number, while an unrecognized numeric speed does not.
 func TestLinkGenerations(t *testing.T) {
 	for i, speed := range []string{"2.5", "5.0", "8.0", "16.0", "32.0", "64.0", "128.0"} {
 		for _, attr := range []struct {
@@ -196,6 +215,8 @@ func TestLinkGenerations(t *testing.T) {
 	}
 }
 
+// TestMissingDeviceIsNotUnsupported checks that a dangling device symlink
+// yields Unavailable failures rather than NotSupported no-value readings.
 func TestMissingDeviceIsNotUnsupported(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, Root), 0o755); err != nil {

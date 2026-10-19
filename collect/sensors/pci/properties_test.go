@@ -14,6 +14,8 @@ import (
 	"github.com/dsx-ai-factory/health-validation/collect/observation"
 )
 
+// TestAdvertisedPropertiesAndObservationContract verifies the sensor advertises
+// link signals with the expected units and emits well-formed observations.
 func TestAdvertisedPropertiesAndObservationContract(t *testing.T) {
 	expected := map[string]string{
 		"pci.link.speed.gt_per_sec": "GT/s", "pci.link.speed.max.gt_per_sec": "GT/s",
@@ -85,6 +87,8 @@ func TestAdvertisedPropertiesAndObservationContract(t *testing.T) {
 	}
 }
 
+// TestCapturedDeviceLinks checks link observations against representative
+// GPU, NIC, bridge, and switch devices from a real PCI capture.
 func TestCapturedDeviceLinks(t *testing.T) {
 	speed := func(n float64) *observation.Value {
 		return &observation.Value{Kind: &observation.Value_DoubleValue{DoubleValue: n}}
