@@ -29,7 +29,12 @@ import (
 	"github.com/dsx-ai-factory/health-validation/toolkit/nvml"
 )
 
-const parityTimeout = 50 * time.Millisecond
+// Cases expected to finish get a generous timeout so slow or race-instrumented
+// runs cannot time them out; a blocked case waits only the short one.
+const (
+	completeTimeout = 30 * time.Second
+	blockedTimeout  = 50 * time.Millisecond
+)
 
 // gpuSlot is one NVML device index as both paths see it.
 type gpuSlot struct {
@@ -52,6 +57,14 @@ type parityNode struct {
 	slots []gpuSlot
 	// count fails DeviceGetCount (enumeration) when not SUCCESS.
 	count gonvml.Return
+}
+
+// timeout is the collection timeout for a run over n.
+func (n parityNode) timeout() time.Duration {
+	if n.block != nil {
+		return blockedTimeout
+	}
+	return completeTimeout
 }
 
 // legacyLibrary is the go-nvml mock the legacy NVML backend reads.
@@ -229,7 +242,7 @@ func runCollect(t *testing.T, n parityNode) (discovery, health.NodeVerdict, int3
 	inst := n.collectInstance()
 	a := New().WithCPUBackend(toolkit.MockCPU(cpu.CPUMeasurement{}))
 	a.host = parityHost{inventory: gpuinventory.New(func() (collect.Sensor, error) { return nvmlsensor.New(inst), nil })}
-	cycle, err := newCycle(parityTimeout)
+	cycle, err := newCycle(n.timeout())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -239,7 +252,7 @@ func runCollect(t *testing.T, n parityNode) (discovery, health.NodeVerdict, int3
 	if err2 != nil {
 		t.Fatal(err2)
 	}
-	verdict, err2 := toolkit.CollectWithOptions(parityCatalog(t), toolkit.CollectionOptions{Timeout: parityTimeout}, sensors...)
+	verdict, err2 := toolkit.CollectWithOptions(parityCatalog(t), toolkit.CollectionOptions{Timeout: n.timeout()}, sensors...)
 	if err2 != nil {
 		t.Fatal(err2)
 	}
@@ -248,7 +261,7 @@ func runCollect(t *testing.T, n parityNode) (discovery, health.NodeVerdict, int3
 
 func runLegacy(t *testing.T, n parityNode) (discovery, health.NodeVerdict) {
 	t.Helper()
-	verdict, err := toolkit.CollectWithOptions(parityCatalog(t), toolkit.CollectionOptions{Timeout: parityTimeout},
+	verdict, err := toolkit.CollectWithOptions(parityCatalog(t), toolkit.CollectionOptions{Timeout: n.timeout()},
 		toolkit.NewNodeSensor(nvml.NewWithLibrary(n.legacyLibrary())))
 	if err != nil {
 		t.Fatal(err)
