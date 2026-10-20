@@ -256,7 +256,7 @@ func checkEntities(cd *health.CheckDefinition, routed []observed) error {
 		if err := o.key.Validate(); err != nil {
 			return ambiguous(o.key, err.Error(), o)
 		}
-		if o.key.Provisional() && !reportsFailure(cd, o.errs) {
+		if o.key.Provisional() && !reportsFailure(cd, o) {
 			return ambiguous(o.key, "a provisional identity carries collected values; joining them to a GPU requires a verified ID", o)
 		}
 		if prev, dup := seen[o.key]; dup {
@@ -271,13 +271,14 @@ func checkEntities(cd *health.CheckDefinition, routed []observed) error {
 	return nil
 }
 
-// reportsFailure reports whether errs fail a signal cd reads. A check that
-// requires no signals reads them all.
-func reportsFailure(cd *health.CheckDefinition, errs []health.ErroredMeasurement) bool {
+// reportsFailure reports whether o's errors fail a signal cd reads. A check
+// that requires no signals reads them all, so o must have lost every signal it
+// carries; a partial failure would leave values that check can read.
+func reportsFailure(cd *health.CheckDefinition, o observed) bool {
 	if len(cd.RequiredSignals) == 0 {
-		return len(errs) > 0
+		return lostEntity(o.errs, o.signals)
 	}
-	detail, _ := matchingError(errs, cd.RequiredSignals)
+	detail, _ := matchingError(o.errs, cd.RequiredSignals)
 	return detail != ""
 }
 

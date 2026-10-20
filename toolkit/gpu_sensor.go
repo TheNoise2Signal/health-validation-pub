@@ -45,7 +45,7 @@ func (s *GPUSensor) Measure(_ context.Context) ([]health.Measurement, error) {
 // Critical when collection could not run.
 func (s *GPUSensor) Errored(err error) []health.Measurement {
 	m := gpu.ErroredGPU(s.Name(), err, gpu.MeasurementSignals...)
-	m.SetEntityKey(health.SourceEntity(s.Name()))
+	m.SetEntityKey(health.SourceEntity(sensorSource(s.Name())))
 	return []health.Measurement{m}
 }
 

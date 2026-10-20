@@ -46,12 +46,20 @@ func keysOf(ms []health.Measurement) []health.EntityKey {
 	return keys
 }
 
-// Keys come from the typed target, not a rendered "<source>:<slot>" label:
-// source "a:b" slot "c" and source "a" slot "b:c" render the same label but
-// are different slots of different sources.
+// Keys come from the typed target, and labels quote each part: source "a:b"
+// slot "c" and source "a" slot "b:c" are different slots of different
+// sources, which a "<source>:<slot>" label would render identically.
 func TestToMeasurementsKeysEntitiesFromTypedTargets(t *testing.T) {
 	observations := slices.Concat(failedSlot("a:b", "c"), failedSlot("a", "b:c"), healthyGPUObservations())
-	got := keysOf(ToMeasurements(observations))
+	ms := ToMeasurements(observations)
+	var labels []string
+	for _, m := range ms {
+		labels = append(labels, m.(gpu.GPUMeasurement).GPUID)
+	}
+	if want := []string{"GPU-0", `slot:"a"/"b:c"`, `slot:"a:b"/"c"`}; !slices.Equal(labels, want) {
+		t.Fatalf("labels = %v, want %v", labels, want)
+	}
+	got := keysOf(ms)
 	want := []health.EntityKey{
 		health.VerifiedEntity("GPU-0"),
 		health.ProvisionalEntity("a", "b:c"),
@@ -77,7 +85,7 @@ func TestToMeasurementsSlotsFromTwoSourcesEvaluateSeparately(t *testing.T) {
 		}
 		entities = append(entities, v.AffectedEntities...)
 	}
-	if !slices.Equal(entities, []string{"dcgm:0", "nvml:0"}) {
+	if !slices.Equal(entities, []string{`slot:"dcgm"/"0"`, `slot:"nvml"/"0"`}) {
 		t.Fatalf("entities = %v, want one failure per source slot", entities)
 	}
 }

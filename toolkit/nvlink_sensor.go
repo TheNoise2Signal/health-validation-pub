@@ -43,7 +43,7 @@ func (s *NVLinkSensor) Measure(_ context.Context) ([]health.Measurement, error) 
 // checks fail Critical when collection could not run.
 func (s *NVLinkSensor) Errored(err error) []health.Measurement {
 	m := nvlink.ErroredNVLink(s.Name(), err, nvlink.MeasurementSignals...)
-	m.SetEntityKey(health.SourceEntity(s.Name()))
+	m.SetEntityKey(health.SourceEntity(sensorSource(s.Name())))
 	return []health.Measurement{m}
 }
 

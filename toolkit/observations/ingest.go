@@ -29,8 +29,8 @@ var errNoObservation = errors.New("no observation was collected for these signal
 // per measurement type and entity, keyed by [health.EntityKey] from each
 // observation's typed target. A GPU is a [health.VerifiedEntity] by UUID. One
 // reported only by a source-local slot is a [health.ProvisionalEntity] of its
-// source and slot, labeled "<source>:<slot>", so slots from different sources
-// stay distinct; a GPU-domain observation with no target is a
+// source and slot, labeled slot:"<source>"/"<slot>" so no two slots share a
+// label; a GPU-domain observation with no target is a
 // [health.SourceEntity] of its source. A GPU reference missing its slot, or a
 // slot or source-level failure missing its source, yields an invalid key that
 // evaluation rejects. Host-wide types are one [health.NodeEntity] measurement
@@ -275,7 +275,7 @@ func targetID(s *schema, current *observation.Observation) (health.EntityKey, st
 	case source == "":
 		return key, "", fmt.Errorf("signal %q has source-local GPU %q but no source", current.GetSignalId(), slot)
 	}
-	return key, source + ":" + slot, nil
+	return key, fmt.Sprintf("slot:%q/%q", source, slot), nil
 }
 
 func (b *builder) entity(s *schema, id health.EntityKey, label string) *entity {
