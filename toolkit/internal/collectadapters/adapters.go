@@ -86,11 +86,15 @@ func erroredCPU(err error) []health.Measurement {
 }
 
 func erroredGPU(err error) []health.Measurement {
-	return []health.Measurement{gpu.ErroredGPU(sourceLevelGPU, err, gpu.MeasurementSignals...)}
+	m := gpu.ErroredGPU(sourceLevelGPU, err, gpu.MeasurementSignals...)
+	m.SetEntityKey(health.SourceEntity(sourceLevelGPU))
+	return []health.Measurement{m}
 }
 
 func erroredNVLink(err error) []health.Measurement {
-	return []health.Measurement{nvlink.ErroredNVLink(sourceLevelGPU, err, nvlink.MeasurementSignals...)}
+	m := nvlink.ErroredNVLink(sourceLevelGPU, err, nvlink.MeasurementSignals...)
+	m.SetEntityKey(health.SourceEntity(sourceLevelGPU))
+	return []health.Measurement{m}
 }
 
 // adaptCategory groups observations per GPU, or into one group when
