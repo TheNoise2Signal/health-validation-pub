@@ -90,13 +90,13 @@ func erroredCPU(err error) []health.Measurement {
 func adapterSource(category health.Category) string { return "collect." + category.String() }
 
 func erroredGPU(err error) []health.Measurement {
-	m := gpu.ErroredGPU(sourceLevelGPU, err, gpu.MeasurementSignals...)
+	m := gpu.ErroredGPU(sourceLevelGPU, err, gpu.MeasurementSignals()...)
 	m.SetEntityKey(health.SourceEntity(adapterSource(health.GPU)))
 	return []health.Measurement{m}
 }
 
 func erroredNVLink(err error) []health.Measurement {
-	m := nvlink.ErroredNVLink(sourceLevelGPU, err, nvlink.MeasurementSignals...)
+	m := nvlink.ErroredNVLink(sourceLevelGPU, err, nvlink.MeasurementSignals()...)
 	m.SetEntityKey(health.SourceEntity(adapterSource(health.NVLink)))
 	return []health.Measurement{m}
 }

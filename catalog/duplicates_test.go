@@ -70,7 +70,7 @@ func probeCatalog(opts ...catalog.Option) *catalog.Catalog {
 }
 
 func slotFailure(source, slot string) gpu.GPUMeasurement {
-	m := gpu.ErroredGPU(source+"-index-"+slot, errors.New("handle unavailable"), gpu.MeasurementSignals...)
+	m := gpu.ErroredGPU(source+"-index-"+slot, errors.New("handle unavailable"), gpu.MeasurementSignals()...)
 	m.SetEntityKey(health.ProvisionalEntity(source, slot))
 	return m
 }
@@ -248,7 +248,7 @@ func TestEvaluateAll_MissingIdentityFailsClosed(t *testing.T) {
 		health.VerifiedEntity(""),
 	} {
 		t.Run(key.String(), func(t *testing.T) {
-			m := gpu.ErroredGPU("gpu", errors.New("lost"), gpu.MeasurementSignals...)
+			m := gpu.ErroredGPU("gpu", errors.New("lost"), gpu.MeasurementSignals()...)
 			m.SetEntityKey(key)
 			wantAmbiguous(t, probeCatalog(), "gpu_pstate_probe", key, m)
 		})
@@ -258,7 +258,7 @@ func TestEvaluateAll_MissingIdentityFailsClosed(t *testing.T) {
 // One GPU whose producer could not name it still evaluates; two cannot be
 // told apart.
 func TestEvaluateAll_UnidentifiedGPUs(t *testing.T) {
-	lost := gpu.ErroredGPU("", errors.New("lost"), gpu.MeasurementSignals...)
+	lost := gpu.ErroredGPU("", errors.New("lost"), gpu.MeasurementSignals()...)
 	if _, err := probeCatalog().EvaluateAll(lost, gpu.GPUMeasurement{GPUID: "GPU-A"}); err != nil {
 		t.Fatalf("EvaluateAll: %v", err)
 	}

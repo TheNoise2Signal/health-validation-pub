@@ -17,11 +17,10 @@ import (
 // Check definitions are data. They carry no sensor or hardware dependencies.
 // Evaluation happens when a caller provides signal values to [Catalog.Evaluate].
 type CheckDefinition struct {
-	Thresholds       map[string]ThresholdSpec `json:"thresholds"`
-	FeasibilityClass string                   `json:"feasibility_class,omitempty"`
-	Description      string                   `json:"description"`
-	Name             string                   `json:"name"`
-	ID               string                   `json:"id"`
+	Thresholds  map[string]ThresholdSpec `json:"thresholds"`
+	Description string                   `json:"description"`
+	Name        string                   `json:"name"`
+	ID          string                   `json:"id"`
 	// Dependencies names check IDs whose Critical verdict explains this check's
 	// inability to collect. Checks never read each other's results, so a
 	// dependency has no effect on whether this check runs, what it reports, or

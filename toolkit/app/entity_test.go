@@ -79,7 +79,7 @@ func TestRunRejectsCallerAdapterDuplicatingBuiltinCategory(t *testing.T) {
 // still produces a verdict, failing each.
 func TestRunKeepsSameSlotFromTwoSourcesDistinct(t *testing.T) {
 	slot := func(source string) gpu.GPUMeasurement {
-		m := gpu.ErroredGPU(source+"-index-0", errors.New("handle unavailable"), gpu.MeasurementSignals...)
+		m := gpu.ErroredGPU(source+"-index-0", errors.New("handle unavailable"), gpu.MeasurementSignals()...)
 		m.SetEntityKey(health.ProvisionalEntity(source, "0"))
 		return m
 	}
