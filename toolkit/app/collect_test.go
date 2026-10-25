@@ -24,6 +24,7 @@ import (
 	"github.com/dsx-ai-factory/health-validation/collect"
 	"github.com/dsx-ai-factory/health-validation/collect/observation"
 	cpusensor "github.com/dsx-ai-factory/health-validation/collect/sensors/cpu"
+	ibsensor "github.com/dsx-ai-factory/health-validation/collect/sensors/infiniband"
 	xidsensor "github.com/dsx-ai-factory/health-validation/collect/sensors/xid"
 	cpusignals "github.com/dsx-ai-factory/health-validation/collect/signals/cpu"
 	gpusignals "github.com/dsx-ai-factory/health-validation/collect/signals/gpu"
@@ -52,9 +53,10 @@ func TestMigratedDomainsDefaultToCollectSensors(t *testing.T) {
 		sources  []string
 		adapters []string
 	}{
-		{name: "default", app: New(), sources: []string{cpusensor.ID, xidsensor.ID}, adapters: []string{"cpu", "xid"}},
-		{name: "CPU override", app: New().WithCPUBackend(toolkit.MockCPU(cpu.CPUMeasurement{})), sources: []string{xidsensor.ID}, adapters: []string{"xid"}},
-		{name: "Xid override", app: New().WithXidBackend(xidSpyBackend{called: new(bool)}), sources: []string{cpusensor.ID}, adapters: []string{"cpu"}},
+		{name: "default", app: New(), sources: []string{cpusensor.ID, xidsensor.ID, ibsensor.ID}, adapters: []string{"cpu", "xid", "infiniband"}},
+		{name: "CPU override", app: New().WithCPUBackend(toolkit.MockCPU(cpu.CPUMeasurement{})), sources: []string{xidsensor.ID, ibsensor.ID}, adapters: []string{"xid", "infiniband"}},
+		{name: "Xid override", app: New().WithXidBackend(xidSpyBackend{called: new(bool)}), sources: []string{cpusensor.ID, ibsensor.ID}, adapters: []string{"cpu", "infiniband"}},
+		{name: "IB override", app: New().WithIBBackend(ibSpyBackend{called: new(bool)}), sources: []string{cpusensor.ID, xidsensor.ID}, adapters: []string{"cpu", "xid"}},
 	}
 	for _, test := range tests {
 		sources, adapters := builtins(test.app)
@@ -1207,6 +1209,13 @@ func TestBuiltinCollectFeedsEveryBuiltinCheck(t *testing.T) {
 		}
 		for _, cd := range catalog.New().List(catalog.Filter{}) {
 			if cd.Category != adapter.Category() {
+				continue
+			}
+			// A category can be split between a collect adapter and a legacy
+			// sensor (infiniband: fabric ports here, link flaps from the
+			// journal sensor). A check is this adapter's when it feeds any of
+			// its signals, and then it must feed all of them.
+			if !slices.ContainsFunc(cd.RequiredSignals, func(s string) bool { return fed[s] }) {
 				continue
 			}
 			for _, s := range cd.RequiredSignals {
